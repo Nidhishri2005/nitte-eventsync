@@ -436,7 +436,7 @@ export const BookVenueModal: React.FC<BookVenueModalProps> = ({
             <div className="space-y-4">
               <div>
                 <h4 className="text-base font-bold text-slate-900">Step 4: Enter Event Details</h4>
-                <p className="text-xs text-slate-500">Provide official details for calendar publication and approvals</p>
+                <p className="text-xs text-slate-500">Provide official details for event registration and calendar publication</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   X, 
   Calendar, 
   Clock, 
   MapPin, 
   CheckCircle2, 
-  XCircle, 
   Trash2,
-  FileCheck,
-  AlertCircle
+  FileCheck
 } from 'lucide-react';
 import { Booking, User, Venue } from '../../types';
 import { INSTITUTIONS } from '../../data/initialData';
@@ -31,51 +29,15 @@ export const EventModal: React.FC<EventModalProps> = ({
 }) => {
   if (!booking) return null;
 
-  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejectError, setRejectError] = useState('');
-
   const venue = venues.find(v => v.id === (booking.venue_id || booking.venueId));
   const institution = INSTITUTIONS.find(i => i.id === (booking.institution_id || booking.institutionId));
 
-  // Identity checks
+  // Identity check: current user is the booking owner
   const isOwner = currentUser.id === (booking.organizer_id || booking.userId) || 
                   currentUser.email.toLowerCase() === (booking.organizer_email || booking.organizerEmail || '').toLowerCase();
 
-  // Strict role approval permissions:
-  // 1. Students can NEVER approve or reject!
-  // 2. Faculty can approve ONLY IF they did not create the booking themselves (no self-approval).
-  // 3. Admin can approve any pending request.
-  const canApprove = (currentUser.role === 'admin' || (currentUser.role === 'faculty' && !isOwner)) && booking.status === 'Pending';
-  const isFacultySelfRequest = currentUser.role === 'faculty' && isOwner && booking.status === 'Pending';
-
-  // Cancellation permission:
-  // Students can cancel ONLY their own requests, and ONLY if status is 'Pending'
-  // Admins can cancel any booking if not already cancelled
-  const canCancel = (currentUser.role === 'admin' || (isOwner && booking.status === 'Pending')) && booking.status !== 'Cancelled';
-
-  const handleApprove = async () => {
-    await storage.updateBookingStatus(booking.id, 'Approved', currentUser.full_name || currentUser.name, undefined, currentUser.id);
-    if (onStatusChange) onStatusChange();
-    onClose();
-  };
-
-  const handleConfirmReject = async () => {
-    if (!rejectReason.trim()) {
-      setRejectError('Please specify an official reason for rejection.');
-      return;
-    }
-    await storage.updateBookingStatus(
-      booking.id, 
-      'Rejected', 
-      currentUser.full_name || currentUser.name, 
-      rejectReason.trim(),
-      currentUser.id
-    );
-    if (onStatusChange) onStatusChange();
-    setRejectionModalOpen(false);
-    onClose();
-  };
+  // Any user can cancel their own active booking
+  const canCancel = isOwner && booking.status !== 'Cancelled';
 
   const handleCancelBooking = async () => {
     if (window.confirm('Are you sure you want to cancel this booking? This action cannot be undone.')) {
@@ -84,6 +46,8 @@ export const EventModal: React.FC<EventModalProps> = ({
       onClose();
     }
   };
+
+  const isConfirmed = booking.status === 'Confirmed' || booking.status === 'Approved';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
@@ -111,12 +75,9 @@ export const EventModal: React.FC<EventModalProps> = ({
               {booking.id.slice(0, 13)}
             </span>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto mr-7 ${
-              booking.status === 'Approved' ? 'bg-emerald-500 text-white' :
-              booking.status === 'Pending' ? 'bg-amber-400 text-amber-950' :
-              booking.status === 'Rejected' ? 'bg-red-500 text-white' :
-              'bg-slate-500 text-white'
+              isConfirmed ? 'bg-emerald-500 text-white' : 'bg-slate-500 text-white'
             }`}>
-              {booking.status}
+              {isConfirmed ? 'Confirmed' : 'Cancelled'}
             </span>
           </div>
 
@@ -138,27 +99,6 @@ export const EventModal: React.FC<EventModalProps> = ({
         </div>
 
         <div className="p-6 space-y-5 text-xs sm:text-sm">
-          {/* Rejection Notice Banner */}
-          {booking.status === 'Rejected' && (booking.rejection_reason || booking.rejectionReason) && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-2.5">
-              <XCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold text-xs uppercase tracking-wider text-red-700">Official Rejection Reason</p>
-                <p className="text-xs mt-0.5">{booking.rejection_reason || booking.rejectionReason}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Self-approval restriction warning for faculty */}
-          {isFacultySelfRequest && (
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <p className="text-xs leading-relaxed">
-                <strong>Faculty Self-Request:</strong> You cannot approve this booking because you submitted it. Another faculty approver or the Principal/Admin must review and clear it.
-              </p>
-            </div>
-          )}
-
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/70">
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
               Reserved Venue
@@ -221,15 +161,15 @@ export const EventModal: React.FC<EventModalProps> = ({
             </div>
           )}
 
-          {booking.status === 'Approved' && (
+          {isConfirmed && (
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <FileCheck className="w-4 h-4 text-emerald-600" />
-              <span>Status: <strong className="text-emerald-700">Official Scheduled Event</strong></span>
+              <span>Status: <strong className="text-emerald-700">Directly Confirmed Booking</strong></span>
             </div>
           )}
 
-          <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-            {canCancel && (
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+            {canCancel ? (
               <button
                 onClick={handleCancelBooking}
                 className="px-3.5 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 transition-colors flex items-center gap-1.5"
@@ -237,74 +177,15 @@ export const EventModal: React.FC<EventModalProps> = ({
                 <Trash2 className="w-3.5 h-3.5" />
                 Cancel Booking
               </button>
-            )}
+            ) : <div />}
 
-            <div className="flex items-center gap-2 ml-auto">
-              {/* Approve / Reject buttons are ONLY visible if canApprove is true (Admins, or Faculty for non-self requests) */}
-              {canApprove && (
-                <>
-                  <button
-                    onClick={() => {
-                      setRejectReason('');
-                      setRejectError('');
-                      setRejectionModalOpen(true);
-                    }}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
-                  >
-                    Reject Request
-                  </button>
-                  <button
-                    onClick={handleApprove}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors flex items-center gap-1"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Approve Request
-                  </button>
-                </>
-              )}
-
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                Close
-              </button>
-            </div>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors"
+            >
+              Close
+            </button>
           </div>
-
-          {rejectionModalOpen && (
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-300 mt-3 animate-in fade-in duration-100 space-y-2">
-              <h5 className="font-bold text-red-950 text-xs">Mandatory Rejection Explanation:</h5>
-              {rejectError && (
-                <p className="text-red-700 text-[11px] font-semibold">{rejectError}</p>
-              )}
-              <textarea
-                rows={2}
-                value={rejectReason}
-                onChange={e => {
-                  setRejectReason(e.target.value);
-                  setRejectError('');
-                }}
-                placeholder="e.g. Venue booked for institutional NBA accreditation or maintenance work..."
-                className="w-full p-2.5 text-xs rounded-xl border border-red-300 bg-white focus:ring-2 focus:ring-red-400"
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setRejectionModalOpen(false)}
-                  className="px-3 py-1.5 rounded-lg text-xs text-slate-600 hover:bg-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmReject}
-                  className="px-4 py-1.5 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700"
-                >
-                  Confirm Rejection
-                </button>
-              </div>
-            </div>
-          )}
-
         </div>
       </div>
     </div>

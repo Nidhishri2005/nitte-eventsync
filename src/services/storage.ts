@@ -1,5 +1,5 @@
 import { db } from './db';
-import { Booking, Venue, Profile, VenueAvailabilityCheck, BookingStatus, UserRole } from '../types';
+import { Booking, Venue, Profile, VenueAvailabilityCheck } from '../types';
 
 class StorageService {
   public subscribe(listener: () => void): () => void {
@@ -36,14 +36,6 @@ class StorageService {
 
   public logout(): void {
     db.logout();
-  }
-
-  public setCurrentUser(id: string): void {
-    db.setCurrentProfile(id);
-  }
-
-  public async updateUserRole(userId: string, newRole: UserRole): Promise<{ success: boolean; error?: string }> {
-    return db.updateUserRole(userId, newRole);
   }
 
   public async syncFromSupabase(): Promise<boolean> {
@@ -92,16 +84,6 @@ class StorageService {
     });
   }
 
-  public async updateBookingStatus(
-    bookingId: string,
-    status: BookingStatus,
-    _approverName?: string,
-    comments?: string,
-    approverId?: string
-  ): Promise<{ success: boolean; error?: string }> {
-    return db.updateBookingStatus(bookingId, status, comments, approverId);
-  }
-
   public async cancelBooking(bookingId: string): Promise<boolean> {
     return db.cancelBooking(bookingId);
   }
@@ -110,20 +92,8 @@ class StorageService {
     return db.addVenue(venue);
   }
 
-  public async updateVenue(venueOrId: Venue | string, partial?: Partial<Venue>) {
-    return db.updateVenue(venueOrId as any, partial);
-  }
-
-  public exportDatabase() {
-    return db.exportDatabase();
-  }
-
-  public resetToDefault() {
-    db.resetToDefault();
-  }
-
-  public getStats() {
-    return db.getStats();
+  public getStats(date?: string, time?: string) {
+    return db.getStats(date, time);
   }
 }
 

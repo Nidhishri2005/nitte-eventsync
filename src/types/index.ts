@@ -1,6 +1,6 @@
 export type UserRole = 'student' | 'faculty' | 'admin';
 
-export type BookingStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+export type BookingStatus = 'Confirmed' | 'Cancelled' | 'Pending' | 'Approved' | 'Rejected';
 
 export type EventCategory = 
   | 'Technical' 
@@ -48,7 +48,7 @@ export interface Profile {
   email: string;
   institution_id: string;
   institutionId?: string; // backwards compatibility alias
-  role: UserRole;
+  role?: UserRole;
   created_at?: string;
   department?: string;
   phone?: string;

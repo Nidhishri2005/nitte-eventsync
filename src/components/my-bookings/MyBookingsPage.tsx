@@ -19,7 +19,7 @@ interface MyBookingsPageProps {
   onOpenBookWizard: () => void;
 }
 
-type BookingFilterTab = 'all' | 'Upcoming' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+type BookingFilterTab = 'all' | 'Upcoming' | 'Confirmed' | 'Cancelled';
 
 export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
   currentUser,
@@ -34,20 +34,24 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
 
   const userBookings = useMemo(() => {
     return allBookings.filter(b => {
-      return currentUser.role === 'admin' 
-        ? true 
-        : ((b.organizer_id || b.userId) === currentUser.id || (b.organizer_email || b.organizerEmail) === currentUser.email);
+      const matchOwner = (b.organizer_id || b.userId) === currentUser.id || 
+                         (b.organizer_email || b.organizerEmail || '').toLowerCase() === currentUser.email.toLowerCase();
+      return matchOwner;
     });
   }, [allBookings, currentUser]);
 
   const filteredBookings = useMemo(() => {
     return userBookings.filter(b => {
       const eventDate = b.event_date || b.date || '';
+      const isConfirmed = b.status === 'Confirmed' || b.status === 'Approved';
+
       if (activeTab === 'Upcoming') {
-        const isUpcoming = eventDate >= '2026-10-27' && (b.status === 'Approved' || b.status === 'Pending');
+        const isUpcoming = eventDate >= '2026-10-27' && isConfirmed;
         if (!isUpcoming) return false;
-      } else if (activeTab !== 'all') {
-        if (b.status !== activeTab) return false;
+      } else if (activeTab === 'Confirmed') {
+        if (!isConfirmed) return false;
+      } else if (activeTab === 'Cancelled') {
+        if (b.status !== 'Cancelled') return false;
       }
 
       if (searchQuery.trim()) {
@@ -66,10 +70,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
   const counts = useMemo(() => {
     return {
       all: userBookings.length,
-      upcoming: userBookings.filter(b => (b.event_date || b.date || '') >= '2026-10-27' && (b.status === 'Approved' || b.status === 'Pending')).length,
-      pending: userBookings.filter(b => b.status === 'Pending').length,
-      approved: userBookings.filter(b => b.status === 'Approved').length,
-      rejected: userBookings.filter(b => b.status === 'Rejected').length,
+      upcoming: userBookings.filter(b => (b.event_date || b.date || '') >= '2026-10-27' && (b.status === 'Confirmed' || b.status === 'Approved')).length,
+      confirmed: userBookings.filter(b => b.status === 'Confirmed' || b.status === 'Approved').length,
       cancelled: userBookings.filter(b => b.status === 'Cancelled').length,
     };
   }, [userBookings]);
@@ -88,18 +90,18 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
               My Venue Bookings
             </h1>
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-50 text-blue-900 border border-blue-200/60">
-              {currentUser.role === 'admin' ? 'Admin All View' : 'Personal Portal'}
+            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200/60">
+              Personal Reservations
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Track submission approvals, download passes, and manage reservation lifecycles.
+            View, track, and manage all your confirmed campus venue reservations.
           </p>
         </div>
 
         <button
           onClick={onOpenBookWizard}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-900 hover:bg-blue-950 rounded-xl shadow-xs transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-blue-950 hover:bg-blue-900 transition-colors shadow-xs"
         >
           <PlusCircle className="w-4 h-4" />
           <span>New Reservation</span>
@@ -112,9 +114,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
             {[
               { id: 'all' as BookingFilterTab, label: 'All', count: counts.all },
               { id: 'Upcoming' as BookingFilterTab, label: 'Upcoming', count: counts.upcoming },
-              { id: 'Pending' as BookingFilterTab, label: 'Pending', count: counts.pending, badgeColor: 'bg-amber-100 text-amber-800' },
-              { id: 'Approved' as BookingFilterTab, label: 'Approved', count: counts.approved, badgeColor: 'bg-emerald-100 text-emerald-800' },
-              { id: 'Rejected' as BookingFilterTab, label: 'Rejected', count: counts.rejected, badgeColor: 'bg-red-100 text-red-800' },
+              { id: 'Confirmed' as BookingFilterTab, label: 'Confirmed', count: counts.confirmed, badgeColor: 'bg-emerald-100 text-emerald-800' },
               { id: 'Cancelled' as BookingFilterTab, label: 'Cancelled', count: counts.cancelled },
             ].map(tab => (
               <button
@@ -151,7 +151,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
 
       <div className="space-y-3">
         {filteredBookings.map((b) => {
-          const venue = venues.find(v => v.id === b.venueId);
+          const venue = venues.find(v => v.id === (b.venue_id || b.venueId));
+          const isConfirmed = b.status === 'Confirmed' || b.status === 'Approved';
 
           return (
             <div
@@ -160,29 +161,24 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
             >
               <div className="flex items-start gap-4">
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold text-xs ${
-                  b.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
-                  b.status === 'Pending' ? 'bg-amber-100 text-amber-800' :
-                  b.status === 'Rejected' ? 'bg-red-100 text-red-800' :
-                  'bg-slate-100 text-slate-700'
+                  isConfirmed ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-700'
                 }`}>
-                  {b.status === 'Approved' ? <CheckCircle2 className="w-6 h-6 text-emerald-600" /> :
-                   b.status === 'Pending' ? <Clock className="w-6 h-6 text-amber-600" /> :
-                   b.status === 'Rejected' ? <XCircle className="w-6 h-6 text-red-600" /> :
-                   <BookmarkCheck className="w-6 h-6 text-slate-500" />}
+                  {isConfirmed ? (
+                    <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                  ) : (
+                    <XCircle className="w-6 h-6 text-slate-400" />
+                  )}
                 </div>
 
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded">
-                      {b.id}
+                      {b.id.slice(0, 13)}
                     </span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      b.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
-                      b.status === 'Pending' ? 'bg-amber-100 text-amber-800' :
-                      b.status === 'Rejected' ? 'bg-red-100 text-red-800' :
-                      'bg-slate-100 text-slate-700'
+                      isConfirmed ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
                     }`}>
-                      {b.status}
+                      {isConfirmed ? 'Confirmed' : 'Cancelled'}
                     </span>
                     <span className="text-xs text-slate-400 font-medium">&bull;</span>
                     <span className="text-xs font-semibold text-slate-600">{b.event_category || b.eventCategory}</span>
@@ -206,12 +202,6 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                       {b.start_time || b.startTime} - {b.end_time || b.endTime}
                     </span>
                   </div>
-
-                  {b.status === 'Rejected' && (b.rejection_reason || b.rejectionReason) && (
-                    <p className="text-xs text-red-700 font-medium mt-2 bg-red-50 p-2 rounded-lg border border-red-200">
-                      <strong>Rejection Reason:</strong> {b.rejection_reason || b.rejectionReason}
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -223,7 +213,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                   View Details
                 </button>
 
-                {(currentUser.role === 'admin' || b.status === 'Pending') && b.status !== 'Cancelled' && (
+                {b.status !== 'Cancelled' && (
                   <button
                     onClick={() => handleCancelBooking(b.id)}
                     className="p-1.5 rounded-xl text-red-600 hover:bg-red-50 border border-red-200 transition-colors"

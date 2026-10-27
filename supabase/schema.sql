@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL CHECK (end_time > start_time),
     expected_attendees INTEGER NOT NULL CHECK (expected_attendees > 0),
-    status TEXT NOT NULL DEFAULT 'Confirmed' CHECK (status IN ('Confirmed', 'Cancelled', 'Confirmed')),
+    status TEXT NOT NULL DEFAULT 'Confirmed' CHECK (status IN ('Confirmed', 'Cancelled')),
     rejection_reason TEXT,
     special_requirements TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -216,36 +216,19 @@ VALUES
     )
 ON CONFLICT (id) DO NOTHING;
 
--- 6. Booking Approvals Table (Audit trail for approval/rejection decisions)
-CREATE TABLE IF NOT EXISTS public.booking_approvals (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    booking_id UUID REFERENCES public.bookings(id) ON DELETE CASCADE,
-    approver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    status TEXT NOT NULL CHECK (status IN ('Confirmed', 'Rejected')),
-    comments TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Seed Initial Approval Logs
-INSERT INTO public.booking_approvals (booking_id, approver_id, status, comments)
-VALUES
-    ('99999999-9999-9999-9999-999999999901', '33333333-3333-3333-3333-333333333331', 'Confirmed', 'Approved by Principal for National Hackathon ceremony'),
-    ('99999999-9999-9999-9999-999999999902', '33333333-3333-3333-3333-333333333332', 'Confirmed', 'Cleared for Joint NMAMIT-Nitte DU Symposium')
-ON CONFLICT DO NOTHING;
-
--- 7. Backend / Database-Level Overlap Conflict Prevention Trigger
--- Prevents any two approved bookings from overlapping at the same venue on the same date!
+-- 6. Backend / Database-Level Overlap Conflict Prevention Trigger
+-- Prevents any two confirmed bookings from overlapping at the same venue on the same date!
 CREATE OR REPLACE FUNCTION public.check_booking_overlap()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Only validate if status is or becomes Approved
-    IF NEW.status IN ('Confirmed', 'Confirmed') THEN
+    -- Only validate if status is Confirmed
+    IF NEW.status = 'Confirmed' THEN
         IF EXISTS (
             SELECT 1 FROM public.bookings
             WHERE venue_id = NEW.venue_id
               AND event_date = NEW.event_date
               AND id <> NEW.id
-              AND status IN ('Confirmed', 'Confirmed')
+              AND status = 'Confirmed'
               AND (NEW.start_time < end_time AND NEW.end_time > start_time)
         ) THEN
             RAISE EXCEPTION 'This venue is already booked for the selected time. Please choose another time or venue.';
@@ -263,12 +246,11 @@ BEFORE INSERT OR UPDATE ON public.bookings
 FOR EACH ROW
 EXECUTE FUNCTION public.check_booking_overlap();
 
--- 8. Row Level Security (RLS) Configuration
+-- 7. Row Level Security (RLS) Configuration
 ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.booking_approvals ENABLE ROW LEVEL SECURITY;
 
 -- Institutions & Venues: Viewable by anyone
 CREATE POLICY "Institutions are viewable by all users" 
@@ -304,12 +286,3 @@ WITH CHECK (true);
 CREATE POLICY "Users can update bookings" 
 ON public.bookings FOR UPDATE 
 USING (true);
-
--- Booking Approvals: Viewable and insertable
-CREATE POLICY "Approvals viewable by all" 
-ON public.booking_approvals FOR SELECT 
-USING (true);
-
-CREATE POLICY "Users can insert approvals" 
-ON public.booking_approvals FOR INSERT 
-WITH CHECK (true);

@@ -223,7 +223,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                   View Details
                 </button>
 
-                {b.status !== 'Cancelled' && (
+                {(currentUser.role === 'admin' || b.status === 'Pending') && b.status !== 'Cancelled' && (
                   <button
                     onClick={() => handleCancelBooking(b.id)}
                     className="p-1.5 rounded-xl text-red-600 hover:bg-red-50 border border-red-200 transition-colors"

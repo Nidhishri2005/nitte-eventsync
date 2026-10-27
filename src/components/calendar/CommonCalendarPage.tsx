@@ -231,14 +231,11 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
           </div>
 
           <div className="flex items-center gap-3 text-[11px] text-slate-500">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Approved
+            <span className="flex items-center gap-1 font-medium text-emerald-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Confirmed
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Pending Review
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-red-500"></span> Rejected
+            <span className="flex items-center gap-1 text-slate-400">
+              <span className="w-2 h-2 rounded-full bg-slate-400"></span> Cancelled
             </span>
           </div>
         </div>
@@ -298,9 +295,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
             className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-slate-700 font-medium"
           >
             <option value="all">All Statuses</option>
-            <option value="Approved">Approved Only</option>
-            <option value="Pending">Pending Review</option>
-            <option value="Rejected">Rejected</option>
+            <option value="Confirmed">Confirmed Only</option>
             <option value="Cancelled">Cancelled</option>
           </select>
         </div>
@@ -396,9 +391,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                               ? 'bg-blue-900 text-white hover:bg-blue-950'
                               : 'bg-teal-700 text-white hover:bg-teal-800'
                           } ${
-                            b.status === 'Pending' ? 'border-dashed border-2 border-amber-300/80 ring-1 ring-amber-400' : ''
-                          } ${
-                            b.status === 'Rejected' ? 'opacity-50 line-through' : ''
+                            b.status === 'Cancelled' ? 'opacity-50 line-through' : ''
                           }`}
                           title={`${b.eventTitle} (${venue?.name || ''}) [${b.startTime} - ${b.endTime}]`}
                         >
@@ -545,7 +538,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                           <div className="flex items-center justify-between text-xs font-bold text-slate-800">
                             <span className="text-blue-900">{b.startTime} &mdash; {b.endTime}</span>
                             <span className={`text-[10px] px-2 py-0.5 rounded ${
-                              b.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                              b.status === 'Cancelled' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-800'
                             }`}>
                               {b.status}
                             </span>

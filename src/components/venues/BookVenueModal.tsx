@@ -631,23 +631,22 @@ export const BookVenueModal: React.FC<BookVenueModalProps> = ({
           {step === 6 && (
             <div className="space-y-4">
               <div>
-                <h4 className="text-base font-bold text-slate-900">Step 6: Submit Booking Request</h4>
-                <p className="text-xs text-slate-500">Confirm and route your request to the approval authority</p>
+                <h4 className="text-base font-bold text-slate-900">Step 6: Confirm Direct Booking</h4>
+                <p className="text-xs text-slate-500">Review reservation details and confirm your venue booking directly</p>
               </div>
 
               <div className="bg-blue-50/70 p-5 rounded-2xl border border-blue-200 text-xs text-blue-900 space-y-3">
                 <div className="flex items-center gap-2 font-bold text-sm text-blue-950">
                   <ShieldCheck className="w-5 h-5 text-blue-900" />
-                  Institutional Approval Routing
+                  Direct Confirmed Booking
                 </div>
                 <p>
-                  Your booking request for <strong>{selectedVenue?.name}</strong> will be submitted to the 
-                  <strong> {currentInstitution?.shortName} Estate &amp; Academic Dean Office</strong> for formal clearance.
+                  Your booking for <strong>{selectedVenue?.name}</strong> will be directly confirmed and stored in the central database without any approval waiting period.
                 </p>
                 <ul className="list-disc pl-5 space-y-1 text-slate-700">
-                  <li>Temporary hold placed on {selectedVenue?.name} during review to prevent duplicate claims.</li>
-                  <li>Official notification sent to the event organizer at <strong>{organizerEmail}</strong>.</li>
-                  <li>Once approved, the event will instantly appear on the Central Common Calendar.</li>
+                  <li>Directly confirmed and saved to the backend database.</li>
+                  <li>Instantly visible on the Central Common Calendar.</li>
+                  <li>Zero double-booking conflict prevention guaranteed.</li>
                 </ul>
               </div>
 
@@ -666,12 +665,13 @@ export const BookVenueModal: React.FC<BookVenueModalProps> = ({
                 <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center shadow-inner mb-3">
                   <CheckCircle2 className="w-10 h-10" />
                 </div>
-                <h4 className="text-2xl font-black text-slate-900">Booking Request Submitted!</h4>
+                <h4 className="text-2xl font-black text-slate-900">Booking Confirmed!</h4>
                 <p className="text-xs text-slate-500 mt-1">
                   Reference ID: <strong className="font-mono text-blue-900 font-bold">{createdBooking.id}</strong>
                 </p>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mt-2 bg-amber-100 text-amber-800">
-                  Status: {createdBooking.status} Approval
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mt-2 bg-emerald-100 text-emerald-800">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Status: Confirmed • Live on Common Calendar
                 </div>
               </div>
 
@@ -780,7 +780,7 @@ export const BookVenueModal: React.FC<BookVenueModalProps> = ({
                   className="px-6 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-blue-900 to-teal-700 hover:from-blue-950 hover:to-teal-800 transition-all flex items-center gap-1.5 shadow-md"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Submit Booking Request</span>
+                  <span>Confirm & Book Venue</span>
                 </button>
               )}
             </div>

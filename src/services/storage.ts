@@ -1,10 +1,6 @@
 import { db } from './db';
-import { Booking, Venue, Profile, VenueAvailabilityCheck, BookingStatus } from '../types';
+import { Booking, Venue, Profile, VenueAvailabilityCheck, BookingStatus, UserRole } from '../types';
 
-/**
- * StorageService provides backward compatibility while delegating 
- * all operations directly to the unified Supabase-connected `db` service.
- */
 class StorageService {
   public subscribe(listener: () => void): () => void {
     return db.subscribe(listener);
@@ -26,8 +22,32 @@ class StorageService {
     return db.getCurrentProfile();
   }
 
+  public getActiveUser(): Profile | null {
+    return db.getActiveUser();
+  }
+
+  public isLoggedIn(): boolean {
+    return db.isLoggedIn();
+  }
+
+  public async loginDemo(email: string, password: string): Promise<{ success: boolean; user?: Profile; error?: string }> {
+    return db.loginDemo(email, password);
+  }
+
+  public logout(): void {
+    db.logout();
+  }
+
   public setCurrentUser(id: string): void {
     db.setCurrentProfile(id);
+  }
+
+  public async updateUserRole(userId: string, newRole: UserRole): Promise<{ success: boolean; error?: string }> {
+    return db.updateUserRole(userId, newRole);
+  }
+
+  public async syncFromSupabase(): Promise<boolean> {
+    return db.syncFromSupabase();
   }
 
   public checkAvailability(
@@ -53,6 +73,7 @@ class StorageService {
     const organizerName = data.organizer_name || data.organizerName || '';
     const organizerEmail = data.organizer_email || data.organizerEmail || '';
     const department = data.department || '';
+    const specialRequirements = data.special_requirements || data.specialRequirements || '';
 
     return db.createBooking({
       venue_id: venueId,
@@ -67,6 +88,7 @@ class StorageService {
       organizer_name: organizerName,
       organizer_email: organizerEmail,
       department,
+      special_requirements: specialRequirements,
     });
   }
 
@@ -74,9 +96,10 @@ class StorageService {
     bookingId: string,
     status: BookingStatus,
     _approverName?: string,
-    comments?: string
+    comments?: string,
+    approverId?: string
   ): Promise<{ success: boolean; error?: string }> {
-    return db.updateBookingStatus(bookingId, status, comments);
+    return db.updateBookingStatus(bookingId, status, comments, approverId);
   }
 
   public async cancelBooking(bookingId: string): Promise<boolean> {

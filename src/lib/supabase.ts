@@ -1,16 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const STORAGE_KEY_SUPABASE_URL = 'nitte_eventsync_supabase_url';
-const STORAGE_KEY_SUPABASE_KEY = 'nitte_eventsync_supabase_anon_key';
-
 export function getSupabaseCredentials() {
   const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
   const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
-  const storedUrl = localStorage.getItem(STORAGE_KEY_SUPABASE_URL) || '';
-  const storedKey = localStorage.getItem(STORAGE_KEY_SUPABASE_KEY) || '';
 
-  const url = (storedUrl || envUrl).trim();
-  const key = (storedKey || envKey).trim();
+  const url = envUrl.trim();
+  const key = envKey.trim();
 
   const isConfigured = Boolean(
     url && 
@@ -20,33 +15,6 @@ export function getSupabaseCredentials() {
   );
 
   return { url, key, isConfigured };
-}
-
-export function saveSupabaseCredentials(url: string, key: string) {
-  if (url && key) {
-    localStorage.setItem(STORAGE_KEY_SUPABASE_URL, url.trim());
-    localStorage.setItem(STORAGE_KEY_SUPABASE_KEY, key.trim());
-    clientInstance = null; // reset client to reload with new creds
-  } else {
-    localStorage.removeItem(STORAGE_KEY_SUPABASE_URL);
-    localStorage.removeItem(STORAGE_KEY_SUPABASE_KEY);
-    clientInstance = null;
-  }
-}
-
-export function getStoredSupabaseConfig() {
-  const { url, key, isConfigured } = getSupabaseCredentials();
-  return { 
-    url, 
-    key, 
-    anonKey: key, 
-    isConfigured, 
-    isConnected: isConfigured 
-  };
-}
-
-export function saveStoredSupabaseConfig(url: string, anonKey: string) {
-  saveSupabaseCredentials(url, anonKey);
 }
 
 let clientInstance: SupabaseClient | null = null;
@@ -76,7 +44,7 @@ export async function testConnection(): Promise<{ success: boolean; message: str
   if (!client) {
     return { 
       success: false, 
-      message: 'Supabase credentials not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to .env or in the Database Settings dialog.' 
+      message: 'Supabase credentials not configured in .env. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.' 
     };
   }
 
@@ -86,29 +54,17 @@ export async function testConnection(): Promise<{ success: boolean; message: str
       if (error.code === '42P01') {
         return {
           success: true,
-          message: 'Connected to Supabase! (Tables not created yet — please run supabase/schema.sql in the SQL Editor)',
+          message: 'Connected to Supabase! (Tables need initialization via supabase/schema.sql in SQL Editor).',
         };
       }
       return { success: false, message: `Database error: ${error.message}` };
     }
     return {
       success: true,
-      message: `Connected to Supabase! Found ${data?.length ?? 0} venue records in public.venues.`,
+      message: `Connected to Supabase PostgreSQL! Found ${data?.length ?? 0} venue records.`,
       rowCount: data?.length ?? 0,
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Connection failed' };
   }
-}
-
-export async function testSupabaseConnection(url?: string, anonKey?: string): Promise<{ success: boolean; message: string; venueCount?: number }> {
-  if (url && anonKey) {
-    saveSupabaseCredentials(url, anonKey);
-  }
-  const result = await testConnection();
-  return {
-    success: result.success,
-    message: result.message,
-    venueCount: result.rowCount,
-  };
 }

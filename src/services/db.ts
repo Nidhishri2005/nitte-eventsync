@@ -1,43 +1,70 @@
 import { Booking, Venue, Institution, Profile, VenueAvailabilityCheck, BookingStatus } from '../types';
 import { INITIAL_BOOKINGS, INITIAL_VENUES, INITIAL_PROFILES, INSTITUTIONS } from '../data/initialData';
-import { getSupabase, getSupabaseCredentials } from '../lib/supabase';
+import { getSupabase } from '../lib/supabase';
 
-const CACHE_KEY_BOOKINGS = 'nitte_eventsync_db_bookings_v2';
-const CACHE_KEY_VENUES = 'nitte_eventsync_db_venues_v2';
-const CACHE_KEY_ACTIVE_USER = 'nitte_eventsync_active_user_v2';
+const CACHE_KEY_BOOKINGS = 'nitte_eventsync_db_bookings_v3';
+const CACHE_KEY_VENUES = 'nitte_eventsync_db_venues_v3';
+const CACHE_KEY_PROFILES = 'nitte_eventsync_db_profiles_v3';
+const CACHE_KEY_SESSION_USER = 'nitte_eventsync_session_user';
+
+export function formatNameFromEmail(email: string): string {
+  const username = email.split('@')[0] || '';
+  const cleaned = username.replace(/[._\-]+/g, ' ').replace(/\d+/g, '').trim();
+  if (!cleaned) return 'Campus Member';
+  return cleaned
+    .split(' ')
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
 
 class DatabaseService {
   private venues: Venue[] = [];
   private bookings: Booking[] = [];
   private profiles: Profile[] = [...INITIAL_PROFILES];
   private institutions: Institution[] = [...INSTITUTIONS];
-  private currentUserId: string = '33333333-3333-3333-3333-333333333333'; // Aditya Shenoy (Student)
+  private currentUser: Profile | null = null;
   private listeners: Set<() => void> = new Set();
-  private isLoaded: boolean = false;
 
   constructor() {
     this.init();
   }
 
   private init() {
-    // 1. Load initial cache
     try {
       const storedBookings = localStorage.getItem(CACHE_KEY_BOOKINGS);
-      this.bookings = storedBookings ? JSON.parse(storedBookings) : [...INITIAL_BOOKINGS];
+      if (storedBookings) {
+        this.bookings = JSON.parse(storedBookings);
+      } else {
+        this.bookings = INITIAL_BOOKINGS.map(b => ({
+          ...b,
+          status: 'Confirmed' as BookingStatus,
+        }));
+      }
 
       const storedVenues = localStorage.getItem(CACHE_KEY_VENUES);
       this.venues = storedVenues ? JSON.parse(storedVenues) : [...INITIAL_VENUES];
 
-      const storedUser = localStorage.getItem(CACHE_KEY_ACTIVE_USER);
-      if (storedUser && this.profiles.some(p => p.id === storedUser)) {
-        this.currentUserId = storedUser;
+      const storedProfiles = localStorage.getItem(CACHE_KEY_PROFILES);
+      if (storedProfiles) {
+        this.profiles = JSON.parse(storedProfiles);
+      }
+
+      // Check demo login session
+      const sessionUserStr = localStorage.getItem(CACHE_KEY_SESSION_USER);
+      if (sessionUserStr) {
+        const parsed = JSON.parse(sessionUserStr);
+        if (parsed && parsed.email) {
+          const matched = this.profiles.find(p => p.email.toLowerCase() === parsed.email.toLowerCase());
+          this.currentUser = matched || parsed;
+        }
       }
     } catch {
-      this.bookings = [...INITIAL_BOOKINGS];
+      this.bookings = INITIAL_BOOKINGS.map(b => ({ ...b, status: 'Confirmed' as BookingStatus }));
       this.venues = [...INITIAL_VENUES];
+      this.profiles = [...INITIAL_PROFILES];
     }
 
-    // 2. Fetch live data from Supabase if connected
     this.syncFromSupabase();
   }
 
@@ -56,7 +83,10 @@ class DatabaseService {
     try {
       localStorage.setItem(CACHE_KEY_BOOKINGS, JSON.stringify(this.bookings));
       localStorage.setItem(CACHE_KEY_VENUES, JSON.stringify(this.venues));
-      localStorage.setItem(CACHE_KEY_ACTIVE_USER, this.currentUserId);
+      localStorage.setItem(CACHE_KEY_PROFILES, JSON.stringify(this.profiles));
+      if (this.currentUser) {
+        localStorage.setItem(CACHE_KEY_SESSION_USER, JSON.stringify(this.currentUser));
+      }
     } catch (e) {
       console.warn('LocalStorage save failed:', e);
     }
@@ -68,7 +98,52 @@ class DatabaseService {
     if (!supabase) return false;
 
     try {
-      // 1. Fetch Venues
+      // 1. Fetch Institutions
+      const { data: dbInsts, error: instError } = await supabase
+        .from('institutions')
+        .select('*');
+      if (!instError && dbInsts && dbInsts.length > 0) {
+        this.institutions = dbInsts.map(i => ({
+          id: i.id,
+          name: i.name,
+          domain: i.domain,
+          shortName: i.domain === 'nmamit.in' ? 'NMAMIT' : 'Nitte University',
+          logo: i.domain === 'nmamit.in' ? '🏛️' : '🎓',
+          address: i.domain === 'nmamit.in' ? 'Nitte, Karkala Taluk, Udupi - 574110' : 'Derlakatte, Mangaluru - 575018',
+        }));
+      }
+
+      // 2. Fetch Profiles
+      const { data: dbProfiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!profileError && dbProfiles && dbProfiles.length > 0) {
+        const merged = [...this.profiles];
+        dbProfiles.forEach(dp => {
+          const idx = merged.findIndex(p => p.id === dp.id || p.email.toLowerCase() === dp.email.toLowerCase());
+          const prof: Profile = {
+            id: dp.id,
+            full_name: dp.full_name,
+            name: dp.full_name,
+            email: dp.email,
+            institution_id: dp.institution_id || '11111111-1111-1111-1111-111111111111',
+            institutionId: dp.institution_id || '11111111-1111-1111-1111-111111111111',
+            department: dp.department || 'Campus Department',
+            phone: dp.phone || '+91 8258 281263',
+            created_at: dp.created_at,
+          };
+          if (idx >= 0) {
+            merged[idx] = prof;
+          } else {
+            merged.push(prof);
+          }
+        });
+        this.profiles = merged;
+      }
+
+      // 3. Fetch Venues
       const { data: dbVenues, error: venueError } = await supabase
         .from('venues')
         .select('*')
@@ -84,10 +159,12 @@ class DatabaseService {
           created_at: v.created_at,
           imageUrl: INITIAL_VENUES.find(iv => iv.name === v.name)?.imageUrl || 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80',
           isAvailable: true,
+          institution_id: v.institution_id || '11111111-1111-1111-1111-111111111111',
+          institutionId: v.institution_id || '11111111-1111-1111-1111-111111111111',
         }));
       }
 
-      // 2. Fetch Bookings
+      // 4. Fetch Bookings
       const { data: dbBookings, error: bookingError } = await supabase
         .from('bookings')
         .select('*')
@@ -96,27 +173,48 @@ class DatabaseService {
       if (!bookingError && dbBookings) {
         this.bookings = dbBookings.map(b => {
           const v = this.venues.find(ven => ven.id === b.venue_id);
-          const p = this.profiles.find(prof => prof.id === b.organizer_id);
+          const p = this.profiles.find(prof => prof.id === b.organizer_id || prof.email === b.organizer_email);
+          const statusNorm: BookingStatus = b.status === 'Cancelled' ? 'Cancelled' : 'Confirmed';
+
           return {
             id: b.id,
             organizer_id: b.organizer_id,
+            userId: b.organizer_id,
             institution_id: b.institution_id,
+            institutionId: b.institution_id,
             venue_id: b.venue_id,
+            venueId: b.venue_id,
             event_title: b.event_title,
+            eventTitle: b.event_title,
             description: b.description || '',
+            eventDescription: b.description || '',
             event_category: b.event_category,
+            eventCategory: b.event_category,
+            category: b.event_category,
             event_date: b.event_date,
+            date: b.event_date,
             start_time: b.start_time?.slice(0, 5) || '09:00',
+            startTime: b.start_time?.slice(0, 5) || '09:00',
             end_time: b.end_time?.slice(0, 5) || '12:00',
+            endTime: b.end_time?.slice(0, 5) || '12:00',
             expected_attendees: b.expected_attendees,
-            status: b.status as BookingStatus,
+            expectedAttendees: b.expected_attendees,
+            status: statusNorm,
+            special_requirements: b.special_requirements || '',
+            specialRequirements: b.special_requirements || '',
             created_at: b.created_at,
+            createdAt: b.created_at,
             updated_at: b.updated_at,
+            updatedAt: b.updated_at,
             venue_name: v?.name || 'Campus Venue',
+            venueName: v?.name || 'Campus Venue',
             venue_location: v?.location || 'NMAMIT Campus',
-            organizer_name: p?.full_name || 'Event Organizer',
-            organizer_email: p?.email || '',
-            department: p?.department || 'Department',
+            venueLocation: v?.location || 'NMAMIT Campus',
+            organizer_name: p?.full_name || b.organizer_name || 'Event Organizer',
+            organizerName: p?.full_name || b.organizer_name || 'Event Organizer',
+            organizer_email: p?.email || b.organizer_email || '',
+            organizerEmail: p?.email || b.organizer_email || '',
+            department: p?.department || 'Academic Department',
           };
         });
       }
@@ -135,23 +233,94 @@ class DatabaseService {
   }
 
   public getCurrentProfile(): Profile {
-    const prof = this.profiles.find(p => p.id === this.currentUserId);
-    return prof || this.profiles[0];
+    if (this.currentUser) return this.currentUser;
+    return this.profiles[0];
   }
 
-  public setCurrentProfile(id: string) {
-    if (this.profiles.some(p => p.id === id)) {
-      this.currentUserId = id;
-      this.saveLocal();
+  public getActiveUser(): Profile | null {
+    return this.currentUser;
+  }
+
+  public isLoggedIn(): boolean {
+    return this.currentUser !== null;
+  }
+
+  public async loginDemo(email: string, password: string): Promise<{ success: boolean; user?: Profile; error?: string }> {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      return { success: false, error: 'Please enter your institutional email address.' };
     }
+    if (!password || password.trim().length === 0) {
+      return { success: false, error: 'Please enter your password.' };
+    }
+
+    const lower = trimmedEmail.toLowerCase();
+    const isNmamit = lower.endsWith('@nmamit.in');
+    const isNitte = lower.endsWith('@nitte.edu');
+
+    if (!isNmamit && !isNitte) {
+      return { success: false, error: 'Please use your NMAMIT or Nitte University institutional email address.' };
+    }
+
+    let user = this.profiles.find(p => p.email.toLowerCase() === lower);
+
+    if (!user) {
+      const derivedName = formatNameFromEmail(trimmedEmail);
+      const instId = isNitte ? '22222222-2222-2222-2222-222222222222' : '11111111-1111-1111-1111-111111111111';
+      const generatedId = crypto.randomUUID ? crypto.randomUUID() : `user-${Date.now()}`;
+
+      user = {
+        id: generatedId,
+        full_name: derivedName,
+        name: derivedName,
+        email: trimmedEmail,
+        institution_id: instId,
+        institutionId: instId,
+        department: isNitte ? 'Nitte University' : 'NMAMIT Campus',
+        phone: '+91 8258 281263',
+      };
+      this.profiles.push(user);
+
+      // Save user to backend Supabase profiles table
+      const supabase = getSupabase();
+      if (supabase) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            institution_id: user.institution_id,
+            department: user.department,
+            phone: user.phone,
+          }, { onConflict: 'email' });
+        } catch (err) {
+          console.warn('Supabase profile insertion warning:', err);
+        }
+      }
+    }
+
+    this.currentUser = user;
+    try {
+      localStorage.setItem(CACHE_KEY_SESSION_USER, JSON.stringify(user));
+    } catch {}
+    this.saveLocal();
+
+    return { success: true, user };
   }
 
-  // --- Institutions ---
+  public logout(): void {
+    this.currentUser = null;
+    try {
+      localStorage.removeItem(CACHE_KEY_SESSION_USER);
+    } catch {}
+    this.notify();
+  }
+
+  // --- Institutions & Venues ---
   public getInstitutions(): Institution[] {
     return [...this.institutions];
   }
 
-  // --- Venues ---
   public getVenues(): Venue[] {
     return [...this.venues];
   }
@@ -160,7 +329,6 @@ class DatabaseService {
     return this.venues.find(v => v.id === id);
   }
 
-  // --- Bookings ---
   public getBookings(): Booking[] {
     return [...this.bookings];
   }
@@ -169,7 +337,7 @@ class DatabaseService {
     return this.bookings.find(b => b.id === id);
   }
 
-  // Double-booking check
+  // --- Conflict Prevention Check ---
   public checkAvailability(
     venueId: string,
     date: string,
@@ -185,36 +353,36 @@ class DatabaseService {
       return {
         isAvailable: false,
         conflictingBookings: [],
-        reason: 'End time must be later than start time',
+        reason: 'End time must be later than start time.',
       };
     }
 
-    // Active approved or pending bookings
+    // Only active confirmed bookings create conflicts
     const active = this.bookings.filter(b => 
-      b.venue_id === venueId &&
-      b.event_date === date &&
-      (b.status === 'Approved' || b.status === 'Pending') &&
+      (b.venue_id === venueId || b.venueId === venueId) &&
+      (b.event_date === date || b.date === date) &&
+      (b.status === 'Confirmed' || b.status === 'Approved') &&
       b.id !== excludeBookingId
     );
 
     const conflicts = active.filter(b => {
-      // Overlap condition: (newStart < b.end && newEnd > b.start)
-      return startTime < b.end_time && endTime > b.start_time;
+      const bStart = (b.start_time || b.startTime || '').slice(0, 5);
+      const bEnd = (b.end_time || b.endTime || '').slice(0, 5);
+      return startTime < bEnd && endTime > bStart;
     });
 
     if (conflicts.length > 0) {
-      const c = conflicts[0];
       return {
         isAvailable: false,
         conflictingBookings: conflicts,
-        reason: `Overlaps with "${c.event_title}" (${c.start_time} - ${c.end_time}) [${c.status}]`,
+        reason: 'This venue is already booked for the selected time. Please choose another time or venue.',
       };
     }
 
     return { isAvailable: true, conflictingBookings: [] };
   }
 
-  // Insert a new Booking
+  // --- Direct Venue Booking ---
   public async createBooking(data: {
     venue_id: string;
     institution_id: string;
@@ -228,40 +396,64 @@ class DatabaseService {
     organizer_name: string;
     organizer_email: string;
     department: string;
+    special_requirements?: string;
   }): Promise<{ success: boolean; booking?: Booking; error?: string }> {
-    // 1. Frontend conflict check
+    // 1. Availability check
     const check = this.checkAvailability(data.venue_id, data.event_date, data.start_time, data.end_time);
     if (!check.isAvailable) {
-      return { success: false, error: check.reason || 'This venue is already booked for the selected time.' };
+      return {
+        success: false,
+        error: check.reason || 'This venue is already booked for the selected time. Please choose another time or venue.',
+      };
     }
 
     const currentProfile = this.getCurrentProfile();
     const newId = crypto.randomUUID ? crypto.randomUUID() : `bk-${Date.now()}`;
     const venue = this.getVenueById(data.venue_id);
 
+    // 2. Direct Confirmation
     const newBooking: Booking = {
       id: newId,
       organizer_id: currentProfile.id,
+      userId: currentProfile.id,
       institution_id: data.institution_id,
+      institutionId: data.institution_id,
       venue_id: data.venue_id,
+      venueId: data.venue_id,
       event_title: data.event_title,
+      eventTitle: data.event_title,
       description: data.description,
+      eventDescription: data.description,
       event_category: data.event_category,
+      eventCategory: data.event_category,
+      category: data.event_category,
       event_date: data.event_date,
+      date: data.event_date,
       start_time: data.start_time,
+      startTime: data.start_time,
       end_time: data.end_time,
+      endTime: data.end_time,
       expected_attendees: data.expected_attendees,
-      status: 'Pending',
+      expectedAttendees: data.expected_attendees,
+      status: 'Confirmed',
+      special_requirements: data.special_requirements || '',
+      specialRequirements: data.special_requirements || '',
       created_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      venue_name: venue?.name || 'Auditorium',
+      updatedAt: new Date().toISOString(),
+      venue_name: venue?.name || 'Campus Venue',
+      venueName: venue?.name || 'Campus Venue',
       venue_location: venue?.location || '',
+      venueLocation: venue?.location || '',
       organizer_name: data.organizer_name || currentProfile.full_name,
+      organizerName: data.organizer_name || currentProfile.full_name,
       organizer_email: data.organizer_email || currentProfile.email,
+      organizerEmail: data.organizer_email || currentProfile.email,
       department: data.department || currentProfile.department,
     };
 
-    // 2. Insert into Supabase if configured
+    // 3. Persist to Supabase PostgreSQL backend
     const supabase = getSupabase();
     if (supabase) {
       try {
@@ -277,135 +469,75 @@ class DatabaseService {
           start_time: newBooking.start_time,
           end_time: newBooking.end_time,
           expected_attendees: newBooking.expected_attendees,
-          status: 'Pending',
+          status: 'Confirmed',
+          special_requirements: newBooking.special_requirements,
         });
 
         if (error) {
           console.error('Supabase booking insert error:', error);
-          // If trigger rejected due to overlap:
-          if (error.message?.includes('Double-booking conflict')) {
-            return { success: false, error: error.message };
+          if (error.message?.includes('Double-booking') || error.message?.includes('already booked')) {
+            return {
+              success: false,
+              error: 'This venue is already booked for the selected time. Please choose another time or venue.',
+            };
           }
         }
-      } catch (err: any) {
+      } catch (err) {
         console.warn('Network error during Supabase insert:', err);
       }
     }
 
-    // 3. Save locally in state
     this.bookings.unshift(newBooking);
     this.saveLocal();
 
     return { success: true, booking: newBooking };
   }
 
-  // Update Booking Status (Approve / Reject)
-  public async updateBookingStatus(
-    bookingId: string, 
-    status: BookingStatus, 
-    comments?: string
-  ): Promise<{ success: boolean; error?: string }> {
-    const booking = this.bookings.find(b => b.id === bookingId);
-    if (!booking) return { success: false, error: 'Booking not found.' };
-
-    const currentProfile = this.getCurrentProfile();
-
-    // If approving, enforce double-booking prevention rule
-    if (status === 'Approved') {
-      const check = this.checkAvailability(
-        booking.venue_id,
-        booking.event_date,
-        booking.start_time,
-        booking.end_time,
-        booking.id
-      );
-      const approvedConflict = check.conflictingBookings.find(c => c.status === 'Approved');
-      if (approvedConflict) {
-        return {
-          success: false,
-          error: `Cannot approve: Overlaps with approved event "${approvedConflict.event_title}" (${approvedConflict.start_time} - ${approvedConflict.end_time})`,
-        };
-      }
-    }
-
-    // 1. Update in Supabase
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { error } = await supabase
-          .from('bookings')
-          .update({ status, updated_at: new Date().toISOString() })
-          .eq('id', bookingId);
-
-        if (error) {
-          console.error('Supabase booking status update error:', error);
-          return { success: false, error: error.message };
-        }
-
-        // Insert into booking_approvals table
-        await supabase.from('booking_approvals').insert({
-          booking_id: bookingId,
-          approver_id: currentProfile.id,
-          status: status === 'Approved' ? 'Approved' : 'Rejected',
-          comments: comments || (status === 'Approved' ? 'Cleared by faculty' : 'Declined'),
-        });
-      } catch (err: any) {
-        console.warn('Supabase update warning:', err);
-      }
-    }
-
-    // 2. Update locally
-    booking.status = status;
-    booking.updated_at = new Date().toISOString();
-    if (status === 'Rejected' && comments) {
-      booking.rejection_reason = comments;
-    }
-    this.saveLocal();
-
-    return { success: true };
-  }
-
-  // Cancel Booking
+  // --- User Booking Self-Cancellation ---
   public async cancelBooking(bookingId: string): Promise<boolean> {
     const booking = this.bookings.find(b => b.id === bookingId);
     if (!booking) return false;
+
+    booking.status = 'Cancelled';
+    booking.updated_at = new Date().toISOString();
+    booking.updatedAt = booking.updated_at;
 
     const supabase = getSupabase();
     if (supabase) {
       try {
         await supabase
           .from('bookings')
-          .update({ status: 'Cancelled', updated_at: new Date().toISOString() })
+          .update({ 
+            status: 'Cancelled', 
+            updated_at: booking.updated_at 
+          })
           .eq('id', bookingId);
       } catch (err) {
-        console.warn('Supabase cancel update warning:', err);
+        console.warn('Supabase status update error:', err);
       }
     }
 
-    booking.status = 'Cancelled';
-    booking.updated_at = new Date().toISOString();
     this.saveLocal();
     return true;
   }
 
-  // Add or update venues
-  public async addVenue(venueData: Partial<Venue>): Promise<{ success: boolean; venue?: Venue; error?: string }> {
-    const newId = venueData.id || (crypto.randomUUID ? crypto.randomUUID() : `ven-${Date.now()}`);
-    const facilitiesStr = Array.isArray(venueData.facilities) 
-      ? venueData.facilities.join(', ') 
-      : (venueData.facilities || '');
-      
+  // --- Venue Management ---
+  public async addVenue(venue: Partial<Venue>): Promise<{ success: boolean; venue?: Venue; error?: string }> {
+    const newId = crypto.randomUUID ? crypto.randomUUID() : `ven-${Date.now()}`;
     const newVenue: Venue = {
       id: newId,
-      name: venueData.name || 'New Venue',
-      location: venueData.location || 'Campus',
-      capacity: Number(venueData.capacity || 100),
-      facilities: facilitiesStr,
-      imageUrl: venueData.imageUrl || 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80',
+      name: venue.name || 'New Venue',
+      location: venue.location || '',
+      capacity: Number(venue.capacity || 100),
+      facilities: venue.facilities || '',
+      imageUrl: venue.imageUrl || 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80',
       isAvailable: true,
-      block: venueData.block || '',
-      floor: venueData.floor || '',
-      created_at: new Date().toISOString(),
+      institution_id: venue.institution_id || venue.institutionId || '11111111-1111-1111-1111-111111111111',
+      institutionId: venue.institution_id || venue.institutionId || '11111111-1111-1111-1111-111111111111',
+      block: venue.block || '',
+      floor: venue.floor || '',
+      description: venue.description || '',
+      contactPerson: venue.contactPerson || '',
     };
 
     const supabase = getSupabase();
@@ -416,10 +548,11 @@ class DatabaseService {
           name: newVenue.name,
           location: newVenue.location,
           capacity: newVenue.capacity,
-          facilities: newVenue.facilities,
+          facilities: typeof newVenue.facilities === 'string' ? newVenue.facilities : (newVenue.facilities as string[]).join(', '),
+          institution_id: newVenue.institution_id,
         });
-      } catch (err) {
-        console.warn('Supabase addVenue warning:', err);
+      } catch (e) {
+        console.warn('Supabase venue insert failed:', e);
       }
     }
 
@@ -428,73 +561,42 @@ class DatabaseService {
     return { success: true, venue: newVenue };
   }
 
-  public async updateVenue(venueOrId: Venue | string, partial?: Partial<Venue>): Promise<{ success: boolean }> {
-    const venueId = typeof venueOrId === 'string' ? venueOrId : venueOrId.id;
-    const updateData = typeof venueOrId === 'string' ? partial : venueOrId;
-    const idx = this.venues.findIndex(v => v.id === venueId);
-    if (idx !== -1 && updateData) {
-      this.venues[idx] = { ...this.venues[idx], ...updateData };
-      const supabase = getSupabase();
-      if (supabase) {
-        try {
-          const v = this.venues[idx];
-          await supabase.from('venues').update({
-            name: v.name,
-            location: v.location,
-            capacity: v.capacity,
-            facilities: typeof v.facilities === 'string' ? v.facilities : v.facilities?.join(', '),
-          }).eq('id', venueId);
-        } catch (err) {
-          console.warn('Supabase updateVenue warning:', err);
+  // --- Real-time Booking Statistics for Dashboard ---
+  public getStats(date?: string, time?: string) {
+    const totalVenues = this.venues.length;
+    const confirmedBookings = this.bookings.filter(b => b.status === 'Confirmed' || b.status === 'Approved');
+    const totalBookings = confirmedBookings.length;
+
+    // Determine booked vs available venues for the requested or current slot
+    const targetDate = date || '2026-10-27';
+    const targetTime = time || '10:00';
+
+    const bookedVenueIds = new Set<string>();
+    confirmedBookings.forEach(b => {
+      const bDate = b.event_date || b.date;
+      const bStart = (b.start_time || b.startTime || '').slice(0, 5);
+      const bEnd = (b.end_time || b.endTime || '').slice(0, 5);
+      const vId = b.venue_id || b.venueId;
+
+      if (bDate === targetDate && vId) {
+        if (targetTime >= bStart && targetTime < bEnd) {
+          bookedVenueIds.add(vId);
         }
       }
-      this.saveLocal();
-    }
-    return { success: true };
-  }
+    });
 
-  public exportDatabase() {
-    return {
-      profiles: this.profiles,
-      institutions: this.institutions,
-      venues: this.venues,
-      bookings: this.bookings,
-      exportedAt: new Date().toISOString(),
-    };
-  }
-
-  public resetToDefault() {
-    this.bookings = [...INITIAL_BOOKINGS];
-    this.venues = [...INITIAL_VENUES];
-    this.profiles = [...INITIAL_PROFILES];
-    this.saveLocal();
-  }
-
-  // Dashboard Statistics
-  public getStats() {
-    const total = this.bookings.length;
-    const pending = this.bookings.filter(b => b.status === 'Pending').length;
-    const approved = this.bookings.filter(b => b.status === 'Approved').length;
-    const rejected = this.bookings.filter(b => b.status === 'Rejected').length;
-    const cancelled = this.bookings.filter(b => b.status === 'Cancelled').length;
-
-    const nmamitBookings = this.bookings.filter(b => b.institution_id === '11111111-1111-1111-1111-111111111111').length;
-    const nitteBookings = this.bookings.filter(b => b.institution_id === '22222222-2222-2222-2222-222222222222').length;
+    const bookedVenues = bookedVenueIds.size;
+    const availableVenues = Math.max(0, totalVenues - bookedVenues);
 
     return {
-      total,
-      totalBookings: total,
-      pending,
-      pendingCount: pending,
-      approved,
-      approvedCount: approved,
-      rejected,
-      rejectedCount: rejected,
-      cancelled,
-      cancelledCount: cancelled,
-      venuesCount: this.venues.length,
-      nmamitBookings,
-      nitteBookings,
+      totalVenues,
+      availableVenues,
+      bookedVenues,
+      totalBookings,
+      total: totalBookings,
+      confirmedCount: totalBookings,
+      venuesCount: totalVenues,
+      availableVenuesCount: availableVenues,
     };
   }
 }

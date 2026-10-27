@@ -39,7 +39,7 @@ INSERT INTO public.profiles (id, full_name, email, institution_id, role, departm
 VALUES
     ('33333333-3333-3333-3333-333333333331', 'Dr. Niranjan Chiplunkar', 'principal@nmamit.in', '11111111-1111-1111-1111-111111111111', 'admin', 'Institute Administration', '+91 8258 281263'),
     ('33333333-3333-3333-3333-333333333332', 'Prof. Shashikantha Karinka', 'shashikantha@nmamit.in', '11111111-1111-1111-1111-111111111111', 'faculty', 'Mechanical Engineering', '+91 98451 22340'),
-    ('33333333-3333-3333-3333-333333333333', 'Aditya Shenoy', 'aditya.cs23@nmamit.in', '11111111-1111-1111-1111-111111111111', 'student', 'Computer Science & Engineering', '+91 94821 77312'),
+    ('33333333-3333-3333-3333-333333333333', 'Nidhishri', 'nidhishri@nmamit.in', '11111111-1111-1111-1111-111111111111', 'student', 'Computer Science & Engineering', '+91 94821 77312'),
     ('33333333-3333-3333-3333-333333333334', 'Dr. Praveen Kumar', 'dean.studentwelfare@nitte.edu', '22222222-2222-2222-2222-222222222222', 'faculty', 'Student Affairs', '+91 824 2204300')
 ON CONFLICT (email) DO UPDATE
 SET full_name = EXCLUDED.full_name,
@@ -114,7 +114,9 @@ CREATE TABLE IF NOT EXISTS public.bookings (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL CHECK (end_time > start_time),
     expected_attendees INTEGER NOT NULL CHECK (expected_attendees > 0),
-    status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Approved', 'Rejected', 'Cancelled')),
+    status TEXT NOT NULL DEFAULT 'Confirmed' CHECK (status IN ('Confirmed', 'Cancelled', 'Confirmed')),
+    rejection_reason TEXT,
+    special_requirements TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -134,7 +136,7 @@ VALUES
         '09:00',
         '12:00',
         320,
-        'Approved',
+        'Confirmed',
         NOW()
     ),
     (
@@ -149,7 +151,7 @@ VALUES
         '14:00',
         '17:30',
         260,
-        'Approved',
+        'Confirmed',
         NOW()
     ),
     (
@@ -164,7 +166,7 @@ VALUES
         '10:00',
         '13:00',
         120,
-        'Approved',
+        'Confirmed',
         NOW()
     ),
     (
@@ -179,7 +181,7 @@ VALUES
         '15:00',
         '17:00',
         80,
-        'Approved',
+        'Confirmed',
         NOW()
     ),
     (
@@ -194,7 +196,7 @@ VALUES
         '11:00',
         '13:30',
         90,
-        'Pending',
+        'Confirmed',
         NOW()
     ),
     (
@@ -209,7 +211,7 @@ VALUES
         '16:00',
         '21:00',
         1800,
-        'Approved',
+        'Confirmed',
         NOW()
     )
 ON CONFLICT (id) DO NOTHING;
@@ -219,7 +221,7 @@ CREATE TABLE IF NOT EXISTS public.booking_approvals (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     booking_id UUID REFERENCES public.bookings(id) ON DELETE CASCADE,
     approver_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    status TEXT NOT NULL CHECK (status IN ('Approved', 'Rejected')),
+    status TEXT NOT NULL CHECK (status IN ('Confirmed', 'Rejected')),
     comments TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -227,8 +229,8 @@ CREATE TABLE IF NOT EXISTS public.booking_approvals (
 -- Seed Initial Approval Logs
 INSERT INTO public.booking_approvals (booking_id, approver_id, status, comments)
 VALUES
-    ('99999999-9999-9999-9999-999999999901', '33333333-3333-3333-3333-333333333331', 'Approved', 'Approved by Principal for National Hackathon ceremony'),
-    ('99999999-9999-9999-9999-999999999902', '33333333-3333-3333-3333-333333333332', 'Approved', 'Cleared for Joint NMAMIT-Nitte DU Symposium')
+    ('99999999-9999-9999-9999-999999999901', '33333333-3333-3333-3333-333333333331', 'Confirmed', 'Approved by Principal for National Hackathon ceremony'),
+    ('99999999-9999-9999-9999-999999999902', '33333333-3333-3333-3333-333333333332', 'Confirmed', 'Cleared for Joint NMAMIT-Nitte DU Symposium')
 ON CONFLICT DO NOTHING;
 
 -- 7. Backend / Database-Level Overlap Conflict Prevention Trigger
@@ -237,16 +239,16 @@ CREATE OR REPLACE FUNCTION public.check_booking_overlap()
 RETURNS TRIGGER AS $$
 BEGIN
     -- Only validate if status is or becomes Approved
-    IF NEW.status = 'Approved' THEN
+    IF NEW.status IN ('Confirmed', 'Confirmed') THEN
         IF EXISTS (
             SELECT 1 FROM public.bookings
             WHERE venue_id = NEW.venue_id
               AND event_date = NEW.event_date
               AND id <> NEW.id
-              AND status = 'Approved'
+              AND status IN ('Confirmed', 'Confirmed')
               AND (NEW.start_time < end_time AND NEW.end_time > start_time)
         ) THEN
-            RAISE EXCEPTION 'Double-booking conflict: This venue is already booked by another approved event during this time slot on %', NEW.event_date;
+            RAISE EXCEPTION 'This venue is already booked for the selected time. Please choose another time or venue.';
         END IF;
     END IF;
     

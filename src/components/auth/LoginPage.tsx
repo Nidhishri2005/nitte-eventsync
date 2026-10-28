@@ -31,7 +31,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     const lower = trimmedEmail.toLowerCase();
     const isDomainValid = lower.endsWith('@nmamit.in') || lower.endsWith('@nitte.edu');
     if (!isDomainValid) {
-      setError('Please use your NMAMIT or Nitte University institutional email address.');
+      setError('Please use your Nitte University institutional email address.');
       return;
     }
 
@@ -70,15 +70,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           Unified Event &amp; Venue Booking Portal
         </p>
 
-        {/* Institution Badges */}
-        <div className="mt-3 flex items-center justify-center gap-2">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-900 border border-blue-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-900"></span>
-            NMAMIT (nmamit.in)
-          </span>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+        {/* Institution Badge */}
+        <div className="mt-3 flex items-center justify-center">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200">
             <span className="w-1.5 h-1.5 rounded-full bg-teal-600"></span>
-            Nitte DU (nitte.edu)
+            Nitte (Deemed to be University)
           </span>
         </div>
       </div>
@@ -116,12 +112,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     setEmail(e.target.value);
                     if (error) setError(null);
                   }}
-                  placeholder="e.g. nidhishri@nmamit.in"
+                  placeholder="e.g. nnm23is107@nmamit.in or student@nitte.edu"
                   className="block w-full pl-10 pr-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all placeholder:text-slate-400 font-medium text-slate-900"
                 />
               </div>
               <p className="mt-1 text-[11px] text-slate-500">
-                Only <code className="text-blue-900 font-semibold">@nmamit.in</code> and <code className="text-teal-700 font-semibold">@nitte.edu</code> institutional emails are authorized.
+                Authorized institutional email address required for Nitte University.
               </p>
             </div>
 
@@ -165,21 +161,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <div className="mt-6 pt-5 border-t border-slate-100">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-2">
               <ShieldCheck className="w-4 h-4 text-teal-600" />
-              <span>Demo Login Quick-Fill:</span>
+              <span>Quick Login Options:</span>
             </div>
             
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => {
-                  setEmail('nidhishri@nmamit.in');
+                  setEmail('nnm23is107@nmamit.in');
                   setPassword('demo123');
                   setError(null);
                 }}
                 className="p-2 rounded-xl border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 text-left transition-colors cursor-pointer"
               >
-                <p className="font-bold text-slate-900 truncate">nidhishri@nmamit.in</p>
-                <p className="text-[10px] text-slate-500">NMAMIT Campus</p>
+                <p className="font-bold text-slate-900 truncate">nnm23is107@nmamit.in</p>
+                <p className="text-[10px] text-teal-700 font-medium">Nitte University Student</p>
               </button>
 
               <button
@@ -192,7 +188,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 className="p-2 rounded-xl border border-slate-200 hover:border-teal-300 hover:bg-teal-50/50 text-left transition-colors cursor-pointer"
               >
                 <p className="font-bold text-slate-900 truncate">student@nitte.edu</p>
-                <p className="text-[10px] text-slate-500">Nitte DU Campus</p>
+                <p className="text-[10px] text-teal-700 font-medium">Nitte University</p>
               </button>
             </div>
           </div>

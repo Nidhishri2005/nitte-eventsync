@@ -142,7 +142,7 @@ export function App() {
         </main>
       </div>
 
-      {/* 7-Step Interactive Venue Booking Wizard Modal */}
+      {/* 6-Step Interactive Venue Booking Wizard Modal */}
       {isBookModalOpen && (
         <BookVenueModal
           isOpen={isBookModalOpen}
@@ -173,9 +173,7 @@ export function App() {
         <p className="flex items-center justify-center gap-2 flex-wrap">
           <span>&copy; 2026 <strong>Nitte EventSync</strong></span>
           <span>&bull;</span>
-          <span>NMAM Institute of Technology (<code className="text-blue-900">nmamit.in</code>)</span>
-          <span>&bull;</span>
-          <span>Nitte University (<code className="text-teal-700">nitte.edu</code>)</span>
+          <span>Nitte (Deemed to be University) (<code className="text-teal-700">nitte.edu</code>)</span>
           <span>&bull;</span>
           <span className="text-slate-400">Direct Venue Booking &amp; Double-Booking Protection</span>
         </p>

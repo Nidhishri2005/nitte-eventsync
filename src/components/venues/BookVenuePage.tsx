@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, 
   Building2, 
@@ -7,14 +7,14 @@ import {
   Calendar,
   Clock
 } from 'lucide-react';
-import { Venue, User } from '../../types';
+import { Venue, Profile } from '../../types';
 import { storage } from '../../services/storage';
 import { VenueCard } from './VenueCard';
 import { VenueDetailsModal } from './VenueDetailsModal';
 import { AddVenueModal } from './AddVenueModal';
 
 interface BookVenuePageProps {
-  currentUser: User;
+  currentUser: Profile;
   onOpenBookWizard: (venue?: Venue) => void;
 }
 
@@ -22,12 +22,19 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
   currentUser,
   onOpenBookWizard,
 }) => {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const unsub = storage.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return () => unsub();
+  }, []);
+
   const venues = storage.getVenues();
   const [selectedDetailsVenue, setSelectedDetailsVenue] = useState<Venue | null>(null);
   const [isAddVenueOpen, setIsAddVenueOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedInstitution, setSelectedInstitution] = useState<string>('all');
   const [minCapacity, setMinCapacity] = useState<number>(0);
   const [selectedFacility, setSelectedFacility] = useState<string>('all');
   const [selectedBlock, setSelectedBlock] = useState<string>('all');
@@ -50,9 +57,6 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
         const matchBlock = v.block ? v.block.toLowerCase().includes(query) : false;
         if (!matchName && !matchLoc && !matchBlock) return false;
       }
-      if (selectedInstitution !== 'all' && (v.institution_id || v.institutionId) !== selectedInstitution) {
-        return false;
-      }
       if (v.capacity < minCapacity) {
         return false;
       }
@@ -69,11 +73,10 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
       }
       return true;
     });
-  }, [venues, searchQuery, selectedInstitution, minCapacity, selectedBlock, selectedFacility]);
+  }, [venues, searchQuery, minCapacity, selectedBlock, selectedFacility]);
 
   const handleResetFilters = () => {
     setSearchQuery('');
-    setSelectedInstitution('all');
     setMinCapacity(0);
     setSelectedFacility('all');
     setSelectedBlock('all');
@@ -88,7 +91,7 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
               Official Campus Venues &amp; Booking
             </h1>
             <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200/60">
-              NMAMIT &amp; Nitte DU
+              Nitte University
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
@@ -100,7 +103,7 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
           {currentUser.role === 'admin' && (
             <button
               onClick={() => setIsAddVenueOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
             >
               <PlusCircle className="w-4 h-4 text-blue-900" />
               <span>Add New Venue</span>
@@ -109,7 +112,7 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
 
           <button
             onClick={() => onOpenBookWizard()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-900 hover:bg-blue-950 rounded-xl shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-900 hover:bg-blue-950 rounded-xl shadow-xs transition-colors cursor-pointer"
           >
             <Calendar className="w-4 h-4" />
             <span>Launch Booking Flow</span>
@@ -159,7 +162,7 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
       </div>
 
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -170,16 +173,6 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
               className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-blue-900"
             />
           </div>
-
-          <select
-            value={selectedInstitution}
-            onChange={e => setSelectedInstitution(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-hidden text-slate-700 font-medium"
-          >
-            <option value="all">All Institutions</option>
-            <option value="nmamit">NMAMIT (nmamit.in)</option>
-            <option value="nitte_edu">Nitte University (nitte.edu)</option>
-          </select>
 
           <select
             value={minCapacity}
@@ -221,10 +214,10 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <span>Showing <strong>{filteredVenues.length}</strong> of {venues.length} venues</span>
           
-          {(searchQuery || selectedInstitution !== 'all' || minCapacity > 0 || selectedFacility !== 'all' || selectedBlock !== 'all') && (
+          {(searchQuery || minCapacity > 0 || selectedFacility !== 'all' || selectedBlock !== 'all') && (
             <button
               onClick={handleResetFilters}
-              className="flex items-center gap-1 text-blue-900 font-semibold hover:underline"
+              className="flex items-center gap-1 text-blue-900 font-semibold hover:underline cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset Filters
@@ -260,7 +253,7 @@ export const BookVenuePage: React.FC<BookVenuePageProps> = ({
           </p>
           <button
             onClick={handleResetFilters}
-            className="mt-4 px-4 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors"
+            className="mt-4 px-4 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer"
           >
             Clear All Filters
           </button>

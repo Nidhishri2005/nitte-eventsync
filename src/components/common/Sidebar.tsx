@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   CalendarDays, 
@@ -8,7 +8,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { Profile } from '../../types';
-import { db } from '../../services/db';
+import { storage } from '../../services/storage';
 
 export type ActiveTab = 'dashboard' | 'calendar' | 'book' | 'my-bookings' | 'events';
 
@@ -29,8 +29,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onClose,
 }) => {
-  const currentProfile = currentProfileProp || currentUser || db.getCurrentProfile();
-  const bookings = db.getBookings();
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const unsub = storage.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return () => unsub();
+  }, []);
+
+  const currentProfile = currentProfileProp || currentUser || storage.getCurrentUser();
+  const bookings = storage.getBookings();
   const confirmedBookings = bookings.filter(b => b.status === 'Confirmed' || b.status === 'Approved');
   const myConfirmedCount = confirmedBookings.filter(b => 
     (b.organizer_id === currentProfile?.id || (b.organizer_email || '').toLowerCase() === (currentProfile?.email || '').toLowerCase())
@@ -47,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'calendar' as ActiveTab,
       label: 'Common Calendar',
       icon: CalendarDays,
-      description: 'Unified cross-campus schedule',
+      description: 'Unified campus schedule',
       badge: `${confirmedBookings.length} Events`,
     },
     {
@@ -156,24 +164,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Footer Campus Info */}
         <div className="pt-4 border-t border-slate-100 space-y-2">
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
-            Participating Campuses
+            Campus
           </p>
 
-          <div className="space-y-1.5 text-xs text-slate-600">
-            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-900 shrink-0"></span>
-              <div className="min-w-0">
-                <p className="font-bold text-slate-900 text-[11px] truncate">NMAMIT</p>
-                <p className="text-[10px] text-slate-400 truncate">nmamit.in &bull; Nitte</p>
-              </div>
-            </div>
-
-            <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0"></span>
-              <div className="min-w-0">
-                <p className="font-bold text-slate-900 text-[11px] truncate">Nitte University</p>
-                <p className="text-[10px] text-slate-400 truncate">nitte.edu &bull; Deralakatte</p>
-              </div>
+          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-teal-600 shrink-0"></span>
+            <div className="min-w-0">
+              <p className="font-bold text-slate-900 text-xs truncate">Nitte University</p>
+              <p className="text-[10px] text-slate-500 truncate">nitte.edu &bull; Derlakatte</p>
             </div>
           </div>
         </div>

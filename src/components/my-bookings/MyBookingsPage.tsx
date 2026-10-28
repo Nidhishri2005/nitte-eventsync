@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BookmarkCheck, 
   Clock, 
@@ -8,14 +8,15 @@ import {
   XCircle, 
   Trash2, 
   Search, 
-  PlusCircle
+  PlusCircle,
+  AlertTriangle
 } from 'lucide-react';
-import { Booking, User } from '../../types';
+import { Booking, Profile } from '../../types';
 import { storage } from '../../services/storage';
 import { EventModal } from '../common/EventModal';
 
 interface MyBookingsPageProps {
-  currentUser: User;
+  currentUser: Profile;
   onOpenBookWizard: () => void;
 }
 
@@ -25,6 +26,14 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
   currentUser,
   onOpenBookWizard,
 }) => {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const unsub = storage.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return () => unsub();
+  }, []);
+
   const [activeTab, setActiveTab] = useState<BookingFilterTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -40,13 +49,15 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
     });
   }, [allBookings, currentUser]);
 
+  const todayStr = '2026-10-28';
+
   const filteredBookings = useMemo(() => {
     return userBookings.filter(b => {
       const eventDate = b.event_date || b.date || '';
       const isConfirmed = b.status === 'Confirmed' || b.status === 'Approved';
 
       if (activeTab === 'Upcoming') {
-        const isUpcoming = eventDate >= '2026-10-27' && isConfirmed;
+        const isUpcoming = eventDate >= todayStr && isConfirmed;
         if (!isUpcoming) return false;
       } else if (activeTab === 'Confirmed') {
         if (!isConfirmed) return false;
@@ -70,15 +81,21 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
   const counts = useMemo(() => {
     return {
       all: userBookings.length,
-      upcoming: userBookings.filter(b => (b.event_date || b.date || '') >= '2026-10-27' && (b.status === 'Confirmed' || b.status === 'Approved')).length,
+      upcoming: userBookings.filter(b => (b.event_date || b.date || '') >= todayStr && (b.status === 'Confirmed' || b.status === 'Approved')).length,
       confirmed: userBookings.filter(b => b.status === 'Confirmed' || b.status === 'Approved').length,
       cancelled: userBookings.filter(b => b.status === 'Cancelled').length,
     };
   }, [userBookings]);
 
   const handleCancelBooking = (bookingId: string) => {
-    if (window.confirm('Are you sure you want to cancel this booking reservation?')) {
+    if (window.confirm('Are you sure you want to cancel this booking reservation? The venue slot will immediately become free.')) {
       storage.cancelBooking(bookingId);
+    }
+  };
+
+  const handleDeleteBooking = (bookingId: string) => {
+    if (window.confirm('Permanently delete this booking record from database?')) {
+      storage.deleteBooking(bookingId);
     }
   };
 
@@ -95,13 +112,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            View, track, and manage all your confirmed campus venue reservations.
+            View, track, and manage all your confirmed Nitte University venue reservations.
           </p>
         </div>
 
         <button
           onClick={onOpenBookWizard}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-blue-950 hover:bg-blue-900 transition-colors shadow-xs"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-blue-950 hover:bg-blue-900 transition-colors shadow-xs cursor-pointer"
         >
           <PlusCircle className="w-4 h-4" />
           <span>New Reservation</span>
@@ -120,7 +137,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3 py-1.5 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTab === tab.id
                     ? 'bg-blue-950 text-white shadow-xs font-bold'
                     : 'text-slate-600 hover:bg-slate-100'
@@ -140,10 +157,10 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Search reference, venue, title..."
+              placeholder="Search by title, venue..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-1 focus:ring-blue-900"
+              className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-xs text-slate-800"
             />
           </div>
         </div>
@@ -157,24 +174,21 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
           return (
             <div
               key={b.id}
-              className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+              className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
             >
-              <div className="flex items-start gap-4">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold text-xs ${
-                  isConfirmed ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-700'
+              <div className="flex items-start gap-4 min-w-0 flex-1">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
+                  isConfirmed ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
                 }`}>
                   {isConfirmed ? (
-                    <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                    <CheckCircle2 className="w-6 h-6" />
                   ) : (
-                    <XCircle className="w-6 h-6 text-slate-400" />
+                    <XCircle className="w-6 h-6" />
                   )}
                 </div>
 
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded">
-                      {b.id.slice(0, 13)}
-                    </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                       isConfirmed ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
                     }`}>
@@ -182,6 +196,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                     </span>
                     <span className="text-xs text-slate-400 font-medium">&bull;</span>
                     <span className="text-xs font-semibold text-slate-600">{b.event_category || b.eventCategory}</span>
+                    <span className="text-xs text-slate-400 font-medium">&bull;</span>
+                    <span className="text-[11px] font-mono text-slate-400">{b.id.slice(0, 10)}</span>
                   </div>
 
                   <h3 className="font-bold text-base text-slate-900 mt-1">
@@ -199,7 +215,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                     </span>
                     <span className="flex items-center gap-1 font-mono">
                       <Clock className="w-3.5 h-3.5 text-slate-400" />
-                      {b.start_time || b.startTime} - {b.end_time || b.endTime}
+                      {(b.start_time || b.startTime || '').slice(0, 5)} - {(b.end_time || b.endTime || '').slice(0, 5)}
                     </span>
                   </div>
                 </div>
@@ -208,7 +224,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
               <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                 <button
                   onClick={() => setSelectedBooking(b)}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
                 >
                   View Details
                 </button>
@@ -216,12 +232,20 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
                 {b.status !== 'Cancelled' && (
                   <button
                     onClick={() => handleCancelBooking(b.id)}
-                    className="p-1.5 rounded-xl text-red-600 hover:bg-red-50 border border-red-200 transition-colors"
-                    title="Cancel Booking"
+                    className="p-1.5 rounded-xl text-amber-700 hover:bg-amber-50 border border-amber-200 transition-colors cursor-pointer"
+                    title="Cancel Reservation"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <AlertTriangle className="w-4 h-4" />
                   </button>
                 )}
+
+                <button
+                  onClick={() => handleDeleteBooking(b.id)}
+                  className="p-1.5 rounded-xl text-red-600 hover:bg-red-50 border border-red-200 transition-colors cursor-pointer"
+                  title="Delete Reservation"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           );
@@ -238,12 +262,17 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({
         )}
       </div>
 
-      <EventModal
-        booking={selectedBooking}
-        onClose={() => setSelectedBooking(null)}
-        currentUser={currentUser}
-        venues={venues}
-      />
+      {selectedBooking && (
+        <EventModal
+          booking={selectedBooking}
+          onClose={() => setSelectedBooking(null)}
+          currentUser={currentUser}
+          venues={venues}
+          onStatusChange={() => {
+            // Updated via reactive storage subscription
+          }}
+        />
+      )}
     </div>
   );
 };

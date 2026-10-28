@@ -10,7 +10,6 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { Venue } from '../../types';
-import { INSTITUTIONS } from '../../data/initialData';
 import { storage } from '../../services/storage';
 
 interface VenueDetailsModalProps {
@@ -26,8 +25,10 @@ export const VenueDetailsModal: React.FC<VenueDetailsModalProps> = ({
 }) => {
   if (!venue) return null;
 
-  const institution = INSTITUTIONS.find(i => i.id === venue.institutionId);
-  const bookings = storage.getBookings().filter(b => b.venueId === venue.id && b.status === 'Approved');
+  const bookings = storage.getBookings().filter(b => 
+    (b.venueId === venue.id || b.venue_id === venue.id) && 
+    (b.status === 'Confirmed' || b.status === 'Approved')
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
@@ -37,7 +38,7 @@ export const VenueDetailsModal: React.FC<VenueDetailsModalProps> = ({
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors"
+          className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -51,10 +52,8 @@ export const VenueDetailsModal: React.FC<VenueDetailsModalProps> = ({
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/30 to-transparent" />
           
           <div className="absolute bottom-5 left-6 right-6 text-white">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-2 ${
-              venue.institutionId === 'nmamit' ? 'bg-blue-900 text-blue-100' : 'bg-teal-800 text-teal-100'
-            }`}>
-              {institution?.name}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold mb-2 bg-teal-800 text-teal-100">
+              Nitte (Deemed to be University)
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               {venue.name}
@@ -142,14 +141,14 @@ export const VenueDetailsModal: React.FC<VenueDetailsModalProps> = ({
                     className="flex items-center justify-between p-3 rounded-xl bg-blue-50/50 border border-blue-100 text-xs"
                   >
                     <div>
-                      <p className="font-bold text-slate-900">{b.eventTitle}</p>
-                      <p className="text-slate-500 mt-0.5">{b.department} &bull; {b.organizerName}</p>
+                      <p className="font-bold text-slate-900">{b.eventTitle || b.event_title}</p>
+                      <p className="text-slate-500 mt-0.5">{b.department} &bull; {b.organizerName || b.organizer_name}</p>
                     </div>
                     <div className="text-right shrink-0 ml-3">
-                      <span className="font-semibold text-blue-950 block">{b.date}</span>
+                      <span className="font-semibold text-blue-950 block">{b.date || b.event_date}</span>
                       <span className="text-slate-500 flex items-center justify-end gap-1 mt-0.5">
                         <Clock className="w-3 h-3 text-slate-400" />
-                        {b.startTime} - {b.endTime}
+                        {(b.startTime || b.start_time || '').slice(0, 5)} - {(b.endTime || b.end_time || '').slice(0, 5)}
                       </span>
                     </div>
                   </div>
@@ -172,7 +171,7 @@ export const VenueDetailsModal: React.FC<VenueDetailsModalProps> = ({
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
+              className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               Close
             </button>
@@ -181,7 +180,7 @@ export const VenueDetailsModal: React.FC<VenueDetailsModalProps> = ({
                 onClose();
                 onBookVenue(venue);
               }}
-              className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-900 to-teal-700 hover:from-blue-950 hover:to-teal-800 transition-all flex items-center gap-2 shadow-md hover:shadow-lg"
+              className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-900 to-teal-700 hover:from-blue-950 hover:to-teal-800 transition-all flex items-center gap-2 shadow-md hover:shadow-lg cursor-pointer"
             >
               <span>Book This Venue</span>
               <ArrowRight className="w-4 h-4" />

@@ -20,7 +20,7 @@ class StorageService {
     return db.getProfiles();
   }
 
-  public getCurrentUser(): Profile {
+  public getCurrentUser(): Profile | null {
     return db.getCurrentProfile();
   }
 
@@ -60,7 +60,7 @@ class StorageService {
 
   public async createBooking(data: any): Promise<{ success: boolean; booking?: Booking; error?: string }> {
     const venueId = data.venue_id || data.venueId;
-    const institutionId = data.institution_id || data.institutionId || '11111111-1111-1111-1111-111111111111';
+    const institutionId = data.institution_id || data.institutionId || '22222222-2222-2222-2222-222222222222';
     const eventTitle = data.event_title || data.eventTitle;
     const description = data.description || data.eventDescription || '';
     const eventCategory = data.event_category || data.eventCategory || data.category || 'Technical';
@@ -70,7 +70,7 @@ class StorageService {
     const expectedAttendees = Number(data.expected_attendees || data.expectedAttendees || 50);
     const organizerName = data.organizer_name || data.organizerName || '';
     const organizerEmail = data.organizer_email || data.organizerEmail || '';
-    const department = data.department || '';
+    const department = data.department || 'Nitte University';
     const specialRequirements = data.special_requirements || data.specialRequirements || '';
 
     return db.createBooking({
@@ -87,11 +87,16 @@ class StorageService {
       organizer_email: organizerEmail,
       department,
       special_requirements: specialRequirements,
+      organizer_id: data.organizer_id || data.userId,
     });
   }
 
   public async cancelBooking(bookingId: string): Promise<boolean> {
     return db.cancelBooking(bookingId);
+  }
+
+  public async deleteBooking(bookingId: string): Promise<boolean> {
+    return db.deleteBooking(bookingId);
   }
 
   public async addVenue(venue: Partial<Venue>) {

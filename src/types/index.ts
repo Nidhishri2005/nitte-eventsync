@@ -2,6 +2,8 @@ export type UserRole = 'student' | 'faculty' | 'admin';
 
 export type BookingStatus = 'Confirmed' | 'Cancelled' | 'Pending' | 'Approved' | 'Rejected';
 
+export type CalendarViewMode = 'month' | 'week' | 'day';
+
 export type EventCategory = 
   | 'Technical' 
   | 'Cultural' 

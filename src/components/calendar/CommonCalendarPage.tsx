@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
-  Search, 
+  Calendar as CalendarIcon, 
   MapPin, 
-  PlusCircle,
-  Clock
+  PlusCircle, 
+  Search, 
+  Eye
 } from 'lucide-react';
-import { Booking, Venue, User } from '../../types';
+import { Booking, Venue, Profile, CalendarViewMode } from '../../types';
 import { storage } from '../../services/storage';
 import { EventModal } from '../common/EventModal';
 
-type CalendarViewMode = 'month' | 'week' | 'day';
-
 interface CommonCalendarPageProps {
-  currentUser: User;
+  currentUser: Profile;
   onOpenBookModal: (venue?: Venue) => void;
 }
 
@@ -22,25 +21,22 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
   currentUser,
   onOpenBookModal,
 }) => {
-  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 9, 27));
+  const [currentDate, setCurrentDate] = useState<Date>(new Date('2026-10-28T09:00:00'));
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
-
-  const [bookings, setBookings] = useState<Booking[]>(() => storage.getBookings());
-  const [venues, setVenues] = useState<Venue[]>(() => storage.getVenues());
-
-  const [selectedInstitution, setSelectedInstitution] = useState<string>('all');
   const [selectedVenueId, setSelectedVenueId] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('Confirmed');
   const [searchQuery, setSearchQuery] = useState<string>('');
-
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
+
+  const [venues, setVenues] = useState<Venue[]>(storage.getVenues());
+  const [bookings, setBookings] = useState<Booking[]>(storage.getBookings());
 
   // Subscribe to real-time storage updates
   useEffect(() => {
     const update = () => {
-      setBookings([...storage.getBookings()]);
       setVenues([...storage.getVenues()]);
+      setBookings([...storage.getBookings()]);
     };
     update();
     const unsubscribe = storage.subscribe(update);
@@ -49,14 +45,6 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
 
   const filteredBookings = useMemo(() => {
     return bookings.filter(b => {
-      const instId = b.institution_id || b.institutionId || '';
-      const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
-      const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
-      const isNitte = instId === '22222222-2222-2222-2222-222222222222' || instId === 'nitte_edu' || email.endsWith('@nitte.edu');
-
-      if (selectedInstitution === 'nmamit' && !isNMAMIT) return false;
-      if (selectedInstitution === 'nitte_edu' && !isNitte) return false;
-
       const vId = b.venue_id || b.venueId;
       if (selectedVenueId !== 'all' && vId !== selectedVenueId) {
         return false;
@@ -88,112 +76,127 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
           return false;
         }
       }
+
       return true;
     });
-  }, [bookings, selectedInstitution, selectedVenueId, selectedCategory, selectedStatus, searchQuery, venues]);
+  }, [bookings, venues, selectedVenueId, selectedCategory, selectedStatus, searchQuery]);
 
-  const handlePrev = () => {
-    const next = new Date(currentDate);
+  // Calendar calculations
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const prevPeriod = () => {
     if (viewMode === 'month') {
-      next.setMonth(next.getMonth() - 1);
+      setCurrentDate(new Date(year, month - 1, 1));
     } else if (viewMode === 'week') {
-      next.setDate(next.getDate() - 7);
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() - 7);
+      setCurrentDate(d);
     } else {
-      next.setDate(next.getDate() - 1);
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() - 1);
+      setCurrentDate(d);
     }
-    setCurrentDate(next);
   };
 
-  const handleNext = () => {
-    const next = new Date(currentDate);
+  const nextPeriod = () => {
     if (viewMode === 'month') {
-      next.setMonth(next.getMonth() + 1);
+      setCurrentDate(new Date(year, month + 1, 1));
     } else if (viewMode === 'week') {
-      next.setDate(next.getDate() + 7);
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + 7);
+      setCurrentDate(d);
     } else {
-      next.setDate(next.getDate() + 1);
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + 1);
+      setCurrentDate(d);
     }
-    setCurrentDate(next);
   };
 
-  const handleToday = () => {
-    setCurrentDate(new Date(2026, 9, 27));
+  const jumpToToday = () => {
+    setCurrentDate(new Date('2026-10-28T09:00:00'));
   };
 
-  const monthYearLabel = currentDate.toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
-
+  // Month grid matrix
   const calendarDays = useMemo(() => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
+    const lastDayOfPrevMonth = new Date(year, month, 0).getDate();
 
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
+    const days: {
+      dateStr: string;
+      dayNumber: number;
+      isCurrentMonth: boolean;
+      isToday: boolean;
+    }[] = [];
 
-    const startingDayOfWeek = firstDay.getDay();
-    const totalDays = lastDay.getDate();
-
-    const days = [];
-
-    const prevMonthLastDay = new Date(year, month, 0).getDate();
-    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-      const d = prevMonthLastDay - i;
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    // Prev month padding
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const d = lastDayOfPrevMonth - i;
+      const prevM = month === 0 ? 12 : month;
+      const prevY = month === 0 ? year - 1 : year;
+      const dateStr = `${prevY}-${String(prevM).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       days.push({
-        dayNumber: d,
         dateStr,
+        dayNumber: d,
         isCurrentMonth: false,
-        date: new Date(year, month - 1, d),
+        isToday: dateStr === '2026-10-28',
       });
     }
 
-    for (let d = 1; d <= totalDays; d++) {
+    // Current month days
+    for (let d = 1; d <= lastDayOfMonth; d++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       days.push({
+        dateStr,
         dayNumber: d,
-        dateStr,
         isCurrentMonth: true,
-        date: new Date(year, month, d),
+        isToday: dateStr === '2026-10-28',
       });
     }
 
-    const remainingDays = 7 - (days.length % 7);
-    if (remainingDays < 7) {
-      for (let d = 1; d <= remainingDays; d++) {
-        const dateStr = `${year}-${String(month + 2).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        days.push({
-          dayNumber: d,
-          dateStr,
-          isCurrentMonth: false,
-          date: new Date(year, month + 1, d),
-        });
-      }
-    }
-
-    return days;
-  }, [currentDate]);
-
-  const weekDays = useMemo(() => {
-    const curr = new Date(currentDate);
-    const dayOfWeek = curr.getDay();
-    const sunday = new Date(curr);
-    sunday.setDate(curr.getDate() - dayOfWeek);
-
-    const days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(sunday);
-      d.setDate(sunday.getDate() + i);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // Next month padding to fill 35 or 42 cells
+    const remaining = (7 - (days.length % 7)) % 7;
+    for (let i = 1; i <= remaining; i++) {
+      const nextM = month === 11 ? 1 : month + 2;
+      const nextY = month === 11 ? year + 1 : year;
+      const dateStr = `${nextY}-${String(nextM).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       days.push({
-        date: d,
         dateStr,
-        dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
-        dayNumber: d.getDate(),
+        dayNumber: i,
+        isCurrentMonth: false,
+        isToday: dateStr === '2026-10-28',
       });
     }
+
     return days;
+  }, [year, month]);
+
+  // Week days calculation
+  const weekDays = useMemo(() => {
+    const start = new Date(currentDate);
+    const day = start.getDay();
+    start.setDate(start.getDate() - day);
+
+    const w: { dateStr: string; dayNumber: number; dayName: string }[] = [];
+    for (let i = 0; i < 7; i++) {
+      const cd = new Date(start);
+      cd.setDate(cd.getDate() + i);
+      const dateStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
+      w.push({
+        dateStr,
+        dayNumber: cd.getDate(),
+        dayName: daysOfWeek[i],
+      });
+    }
+    return w;
   }, [currentDate]);
 
   const currentDayStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
@@ -206,12 +209,12 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
               Common Campus Calendar
             </h1>
-            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-blue-50 text-blue-900 border border-blue-200/60">
-              NMAMIT &amp; Nitte DU
+            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200/60">
+              Nitte University
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Centralized cross-institutional venue schedules and real-time conflict-free booking calendar.
+            Official campus venue schedules and real-time conflict-free booking calendar.
           </p>
         </div>
 
@@ -221,7 +224,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
-                className={`px-3 py-1.5 rounded-lg capitalize transition-all ${
+                className={`px-3 py-1.5 rounded-lg capitalize transition-all cursor-pointer ${
                   viewMode === mode
                     ? 'bg-white text-blue-950 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -234,7 +237,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
 
           <button
             onClick={() => onOpenBookModal()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-900 hover:bg-blue-950 rounded-xl shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-900 hover:bg-blue-950 rounded-xl shadow-xs transition-colors cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
             <span>New Booking</span>
@@ -245,13 +248,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-100 pb-3">
           <div className="flex flex-wrap items-center gap-4">
-            <span className="font-bold text-slate-700">Institution Colors:</span>
-            
-            <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-3.5 rounded-md bg-blue-900 border border-blue-950 shadow-xs"></span>
-              <span className="font-semibold text-slate-800">NMAMIT Events</span>
-            </div>
-
+            <span className="font-bold text-slate-700">Campus:</span>
             <div className="flex items-center gap-1.5">
               <span className="w-3.5 h-3.5 rounded-md bg-teal-700 border border-teal-800 shadow-xs"></span>
               <span className="font-semibold text-slate-800">Nitte University Events</span>
@@ -268,7 +265,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -281,23 +278,13 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
           </div>
 
           <select
-            value={selectedInstitution}
-            onChange={e => setSelectedInstitution(e.target.value)}
-            className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-slate-700 font-medium"
-          >
-            <option value="all">All Institutions</option>
-            <option value="nmamit">NMAMIT (nmamit.in)</option>
-            <option value="nitte_edu">Nitte University (nitte.edu)</option>
-          </select>
-
-          <select
             value={selectedVenueId}
             onChange={e => setSelectedVenueId(e.target.value)}
             className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-slate-700 font-medium"
           >
             <option value="all">All Venues</option>
             {venues.map(v => (
-              <option key={v.id} value={v.id}>{v.name} ({v.institutionId === 'nmamit' || v.institution_id === '11111111-1111-1111-1111-111111111111' ? 'NMAMIT' : 'Nitte DU'})</option>
+              <option key={v.id} value={v.id}>{v.name}</option>
             ))}
           </select>
 
@@ -322,78 +309,81 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
             onChange={e => setSelectedStatus(e.target.value)}
             className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-slate-700 font-medium"
           >
-            <option value="all">Active Events Only</option>
-            <option value="Confirmed">Confirmed Bookings</option>
+            <option value="Confirmed">Confirmed Bookings Only</option>
             <option value="Cancelled">Cancelled Bookings</option>
+            <option value="all">All Active &amp; Confirmed</option>
           </select>
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      {/* Calendar Navigation Toolbar */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-            {monthYearLabel}
-          </h2>
-          {viewMode === 'day' && (
-            <span className="text-xs text-slate-500 font-medium">
-              &bull; {currentDate.toLocaleDateString('en-US', { weekday: 'long' })}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-xs">
           <button
-            onClick={handlePrev}
-            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-            title="Previous"
+            onClick={prevPeriod}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
+            aria-label="Previous Period"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
+
           <button
-            onClick={handleToday}
-            className="px-3 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            onClick={jumpToToday}
+            className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            Today (Oct 27)
+            <CalendarIcon className="w-3.5 h-3.5 text-teal-700" />
+            <span>Today</span>
           </button>
+
           <button
-            onClick={handleNext}
-            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
-            title="Next"
+            onClick={nextPeriod}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 transition-colors cursor-pointer"
+            aria-label="Next Period"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
+
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 ml-2">
+            {viewMode === 'month' && `${monthNames[month]} ${year}`}
+            {viewMode === 'week' && `Week of ${weekDays[0].dayName}, ${weekDays[0].dateStr}`}
+            {viewMode === 'day' && currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </h2>
+        </div>
+
+        <div className="text-xs text-slate-500 font-medium">
+          Showing <strong className="text-slate-800">{filteredBookings.length}</strong> active confirmed bookings
         </div>
       </div>
 
+      {/* VIEW MODES */}
       {viewMode === 'month' && (
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <div className="min-w-[680px]">
-              <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-2.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
-                  <div key={day} className={i === 0 || i === 6 ? 'text-slate-400' : ''}>
-                    {day}
-                  </div>
+            <div className="min-w-[700px]">
+              <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-2.5 text-xs font-bold text-slate-600">
+                {daysOfWeek.map(d => (
+                  <div key={d} className="uppercase tracking-wider">{d}</div>
                 ))}
               </div>
 
-              <div className="grid grid-cols-7 divide-x divide-y divide-slate-100 min-h-[580px]">
-                {calendarDays.map((cd, index) => {
+              <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
+                {calendarDays.map((cd) => {
                   const dayBookings = filteredBookings.filter(b => (b.event_date || b.date) === cd.dateStr);
-                  const isToday = cd.dateStr === '2026-10-27';
 
                   return (
                     <div
-                      key={index}
-                      className={`p-1.5 sm:p-2 min-h-[110px] flex flex-col justify-between transition-colors ${
-                        !cd.isCurrentMonth ? 'bg-slate-50/50 text-slate-300' : 'bg-white hover:bg-slate-50/40'
-                      }`}
+                      key={cd.dateStr}
+                      className={`min-h-[120px] p-2 flex flex-col transition-colors ${
+                        !cd.isCurrentMonth ? 'bg-slate-50/60 text-slate-400' : 'bg-white'
+                      } ${cd.isToday ? 'bg-blue-50/30' : ''}`}
                     >
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between mb-1.5">
                         <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
-                          isToday 
-                            ? 'bg-blue-900 text-white font-extrabold shadow-xs' 
-                            : cd.isCurrentMonth ? 'text-slate-700' : 'text-slate-300'
+                          cd.isToday 
+                            ? 'bg-blue-900 text-white shadow-xs' 
+                            : cd.isCurrentMonth 
+                            ? 'text-slate-800' 
+                            : 'text-slate-400'
                         }`}>
                           {cd.dayNumber}
                         </span>
@@ -408,10 +398,6 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                       <div className="space-y-1 overflow-y-auto max-h-[85px] flex-1">
                         {dayBookings.map((b) => {
                           const venue = venues.find(v => v.id === (b.venue_id || b.venueId));
-                          const instId = b.institution_id || b.institutionId || '';
-                          const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
-                          const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
-
                           const title = b.event_title || b.eventTitle || 'Campus Booking';
                           const startTime = (b.start_time || b.startTime || '').slice(0, 5);
 
@@ -419,11 +405,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                             <div
                               key={b.id}
                               onClick={() => setActiveBooking(b)}
-                              className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-medium leading-tight shadow-xs transition-all hover:scale-[1.02] flex items-center justify-between gap-1 ${
-                                isNMAMIT
-                                  ? 'bg-blue-900 text-white hover:bg-blue-950'
-                                  : 'bg-teal-700 text-white hover:bg-teal-800'
-                              } ${
+                              className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-medium leading-tight shadow-xs transition-all hover:scale-[1.02] flex items-center justify-between gap-1 bg-teal-700 text-white hover:bg-teal-800 ${
                                 b.status === 'Cancelled' ? 'opacity-50 line-through' : ''
                               }`}
                               title={`${title} (${venue?.name || b.venue_name || 'Venue'}) [${startTime} - ${(b.end_time || b.endTime || '').slice(0, 5)}]`}
@@ -459,7 +441,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
             <div className="min-w-[680px]">
               <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-3 text-xs font-bold text-slate-700">
                 {weekDays.map(wd => {
-                  const isToday = wd.dateStr === '2026-10-27';
+                  const isToday = wd.dateStr === '2026-10-28';
                   return (
                     <div key={wd.dateStr} className="space-y-1">
                       <p className="uppercase tracking-wider text-[11px] text-slate-500">{wd.dayName}</p>
@@ -486,10 +468,6 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                       ) : (
                         dayBookings.map(b => {
                           const venue = venues.find(v => v.id === (b.venue_id || b.venueId));
-                          const instId = b.institution_id || b.institutionId || '';
-                          const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
-                          const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
-
                           const title = b.event_title || b.eventTitle || 'Campus Booking';
                           const startTime = (b.start_time || b.startTime || '').slice(0, 5);
                           const endTime = (b.end_time || b.endTime || '').slice(0, 5);
@@ -498,16 +476,14 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                             <div
                               key={b.id}
                               onClick={() => setActiveBooking(b)}
-                              className={`cursor-pointer p-2.5 rounded-xl text-xs text-white shadow-xs transition-transform hover:-translate-y-0.5 space-y-1 ${
-                                isNMAMIT ? 'bg-blue-900' : 'bg-teal-700'
-                              }`}
+                              className="cursor-pointer p-2.5 rounded-xl text-xs text-white shadow-xs transition-transform hover:-translate-y-0.5 space-y-1 bg-teal-700 hover:bg-teal-800"
                             >
-                              <div className="flex items-center justify-between text-[10px] text-slate-200">
+                              <div className="flex items-center justify-between text-[10px] text-teal-100">
                                 <span className="font-mono">{startTime} - {endTime}</span>
                                 <span className="font-bold">{b.status}</span>
                               </div>
                               <p className="font-bold text-white line-clamp-2">{title}</p>
-                              <p className="text-[10px] text-slate-200 truncate flex items-center gap-1">
+                              <p className="text-[10px] text-teal-100 truncate flex items-center gap-1">
                                 <MapPin className="w-3 h-3 shrink-0" />
                                 {venue?.name || b.venue_name || 'Venue'}
                               </p>
@@ -551,52 +527,49 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                 <div key={v.id} className="p-4 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
-                      <span className={`w-2.5 h-2.5 rounded-full ${
-                        v.institutionId === 'nmamit' || v.institution_id === '11111111-1111-1111-1111-111111111111' ? 'bg-blue-900' : 'bg-teal-600'
-                      }`} />
+                      <span className="w-2.5 h-2.5 rounded-full bg-teal-600" />
                       <div>
                         <h4 className="font-bold text-sm text-slate-900">{v.name}</h4>
-                        <p className="text-xs text-slate-500">{v.location} &bull; Capacity: {v.capacity}</p>
+                        <p className="text-xs text-slate-500">{v.location} &bull; Capacity: {v.capacity} Pax</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => onOpenBookModal(v)}
-                        className="px-3 py-1 text-xs font-semibold bg-white border border-slate-300 hover:border-blue-900 text-slate-700 hover:text-blue-900 rounded-lg transition-colors"
-                      >
-                        Book Slot
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => onOpenBookModal(v)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Book Slot</span>
+                    </button>
                   </div>
 
-                  {dayBookings.length > 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-200/60">
-                      {dayBookings.map(b => {
-                        const title = b.event_title || b.eventTitle || 'Campus Booking';
-                        const startTime = (b.start_time || b.startTime || '').slice(0, 5);
-                        const endTime = (b.end_time || b.endTime || '').slice(0, 5);
-                        const host = b.organizer_name || b.organizerName || 'Campus Member';
-
-                        return (
-                          <div
-                            key={b.id}
-                            onClick={() => setActiveBooking(b)}
-                            className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-blue-900 cursor-pointer transition-all"
-                          >
-                            <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                              <span className="text-blue-900">{startTime} &mdash; {endTime}</span>
-                              <span className={`text-[10px] px-2 py-0.5 rounded ${
-                                b.status === 'Cancelled' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-800'
-                              }`}>
-                                {b.status}
-                              </span>
-                            </div>
-                            <p className="font-semibold text-xs text-slate-900 mt-1">{title}</p>
-                            <p className="text-[11px] text-slate-500 mt-0.5">Host: {host} {b.department ? `(${b.department})` : ''}</p>
+                  {dayBookings.length === 0 ? (
+                    <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-medium">Entire day is open for reservation &mdash; Zero scheduling conflicts.</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {dayBookings.map(b => (
+                        <div 
+                          key={b.id}
+                          onClick={() => setActiveBooking(b)}
+                          className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 cursor-pointer"
+                        >
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">{b.event_title || b.eventTitle}</p>
+                            <p className="text-[11px] text-slate-500">
+                              Host: {b.organizer_name || b.organizerName} ({b.department || 'Nitte University'}) &bull; Expected: {b.expected_attendees || b.expectedAttendees} Pax
+                            </p>
                           </div>
-                        );
-                      })}
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono text-xs font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded">
+                              {(b.start_time || b.startTime || '').slice(0, 5)} - {(b.end_time || b.endTime || '').slice(0, 5)}
+                            </span>
+                            <Eye className="w-4 h-4 text-slate-400" />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -606,12 +579,18 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
         </div>
       )}
 
-      <EventModal
-        booking={activeBooking}
-        onClose={() => setActiveBooking(null)}
-        currentUser={currentUser}
-        venues={venues}
-      />
+      {/* Booking Details Modal */}
+      {activeBooking && (
+        <EventModal
+          booking={activeBooking}
+          onClose={() => setActiveBooking(null)}
+          currentUser={currentUser}
+          venues={venues}
+          onStatusChange={() => {
+            setBookings([...storage.getBookings()]);
+          }}
+        />
+      )}
     </div>
   );
 };

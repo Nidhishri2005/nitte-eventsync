@@ -13,7 +13,7 @@ import {
   BookmarkCheck
 } from 'lucide-react';
 import { Profile, Venue, Booking } from '../../types';
-import { db, getUserDisplayName } from '../../services/db';
+import { storage } from '../../services/storage';
 
 interface DashboardPageProps {
   currentProfile?: Profile;
@@ -30,29 +30,43 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onOpenBookWizard,
   onViewEvent,
 }) => {
-  const currentProfile = currentProfileProp || currentUser || db.getCurrentProfile();
-  const venues = db.getVenues();
-  const bookings = db.getBookings();
+  // Real-time reactive subscription to backend database changes
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const unsubscribe = storage.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  // Active time filter for availability stats calculation
-  const [selectedDate, setSelectedDate] = useState('2026-10-27');
+  const currentProfile = currentProfileProp || currentUser || storage.getCurrentUser();
+  const venues = storage.getVenues();
+  const bookings = storage.getBookings();
+
+  // Active date & time filter for availability calculation
+  const [selectedDate, setSelectedDate] = useState('2026-10-28');
   const [selectedTime, setSelectedTime] = useState('10:00');
 
   // Dynamic booking statistics from actual database records
-  const stats = db.getStats(selectedDate, selectedTime);
+  const stats = storage.getStats(selectedDate, selectedTime);
 
-  // Confirmed bookings for today
+  // Confirmed bookings for selected date
   const todayEvents = bookings.filter(b => 
-    (b.event_date === '2026-10-27' || b.date === '2026-10-27') && 
+    (b.event_date === selectedDate || b.date === selectedDate) && 
     (b.status === 'Confirmed' || b.status === 'Approved')
   );
 
   // Upcoming confirmed bookings
   const upcomingEvents = bookings
-    .filter(b => (b.event_date || b.date || '') >= '2026-10-27' && (b.status === 'Confirmed' || b.status === 'Approved'))
+    .filter(b => (b.event_date || b.date || '') >= selectedDate && (b.status === 'Confirmed' || b.status === 'Approved'))
+    .sort((a, b) => {
+      const dateA = (a.event_date || a.date || '') + ' ' + (a.start_time || a.startTime || '');
+      const dateB = (b.event_date || b.date || '') + ' ' + (b.start_time || b.startTime || '');
+      return dateA.localeCompare(dateB);
+    })
     .slice(0, 4);
 
-  const userDisplayName = getUserDisplayName(currentProfile);
+  const userDisplayName = storage.getUserDisplayName(currentProfile);
 
   return (
     <div className="space-y-8 w-full max-w-full overflow-hidden">
@@ -71,7 +85,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </h1>
           
           <p className="text-xs sm:text-sm text-slate-200 mt-2 leading-relaxed">
-            Centralized venue booking system for <strong>NMAM Institute of Technology</strong> (<code className="text-teal-300">nmamit.in</code>) and <strong>Nitte University</strong> (<code className="text-teal-300">nitte.edu</code>). Direct reservation with automated zero double-booking conflict prevention.
+            Centralized venue booking system for <strong>Nitte (Deemed to be University)</strong> (<code className="text-teal-300">nitte.edu</code>). Direct reservation with automated zero double-booking conflict prevention.
           </p>
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-6">
@@ -108,19 +122,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500">
             Venue &amp; Reservation Statistics
           </h2>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>Availability for:</span>
+          <div className="flex items-center gap-2 text-xs text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200/90 shadow-2xs">
+            <span className="font-semibold text-slate-700">Availability for:</span>
             <input
               type="date"
               value={selectedDate}
               onChange={e => setSelectedDate(e.target.value)}
-              className="px-2 py-1 rounded-lg border border-slate-200 text-xs bg-white text-slate-700"
+              className="px-2 py-0.5 rounded border border-slate-200 text-xs bg-slate-50 text-slate-800 font-medium"
             />
             <input
               type="time"
               value={selectedTime}
               onChange={e => setSelectedTime(e.target.value)}
-              className="px-2 py-1 rounded-lg border border-slate-200 text-xs bg-white text-slate-700"
+              className="px-2 py-0.5 rounded border border-slate-200 text-xs bg-slate-50 text-slate-800 font-medium"
             />
           </div>
         </div>
@@ -135,7 +149,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Venues</p>
               <p className="text-2xl font-black text-slate-900 mt-0.5">{stats.totalVenues}</p>
-              <p className="text-[11px] text-slate-500 truncate">Official Campus Venues</p>
+              <p className="text-[11px] text-slate-500 truncate">Official University Venues</p>
             </div>
           </div>
 
@@ -147,7 +161,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="min-w-0">
               <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Available Venues</p>
               <p className="text-2xl font-black text-emerald-950 mt-0.5">{stats.availableVenues}</p>
-              <p className="text-[11px] text-emerald-700 truncate">Free for {selectedTime}</p>
+              <p className="text-[11px] text-emerald-700 truncate">Free for {selectedTime} on {selectedDate}</p>
             </div>
           </div>
 
@@ -159,7 +173,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="min-w-0">
               <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Booked Venues</p>
               <p className="text-2xl font-black text-amber-950 mt-0.5">{stats.bookedVenues}</p>
-              <p className="text-[11px] text-amber-700 truncate">Active at {selectedTime}</p>
+              <p className="text-[11px] text-amber-700 truncate">Active at {selectedTime} on {selectedDate}</p>
             </div>
           </div>
 
@@ -171,7 +185,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Bookings</p>
               <p className="text-2xl font-black text-slate-900 mt-0.5">{stats.totalBookings}</p>
-              <p className="text-[11px] text-teal-700 font-semibold truncate">Confirmed Reservations</p>
+              <p className="text-[11px] text-teal-700 font-semibold truncate">Active Confirmed Bookings</p>
             </div>
           </div>
 
@@ -188,7 +202,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-blue-900" />
                 <h3 className="font-extrabold text-base text-slate-900">
-                  Campus Events Today &mdash; Oct 27, 2026
+                  Campus Events on {selectedDate}
                 </h3>
               </div>
 
@@ -225,7 +239,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                             <span>{venue?.name || event.venue_name || 'Campus Venue'}</span>
                           </p>
                           <p className="text-[11px] text-slate-400 mt-0.5">
-                            Host: {event.organizer_name || event.organizerName} ({event.department})
+                            Host: {event.organizer_name || event.organizerName} ({event.department || 'Nitte University'})
                           </p>
                         </div>
                       </div>
@@ -235,7 +249,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                           <CheckCircle2 className="w-3 h-3" />
                           Confirmed
                         </span>
-                        <span className="text-[11px] text-slate-400">
+                        <span className="text-[11px] text-slate-400 font-mono">
                           {(event.start_time || event.startTime || '').slice(0, 5)} &ndash; {(event.end_time || event.endTime || '').slice(0, 5)}
                         </span>
                       </div>
@@ -243,11 +257,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   );
                 })
               ) : (
-                <div className="p-8 text-center text-slate-400 text-xs">
-                  No confirmed events scheduled for today.
+                <div className="p-8 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center">
+                  <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-semibold text-slate-700">No Confirmed Events Scheduled for {selectedDate}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">All campus venues are available. Click below to book.</p>
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <button
+              onClick={() => onOpenBookWizard()}
+              className="w-full py-2.5 rounded-xl text-xs font-bold text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              <span>Reserve a Venue for This Date</span>
+            </button>
           </div>
         </div>
 
@@ -267,30 +293,38 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
 
             <div className="space-y-3">
-              {upcomingEvents.map(event => {
-                const venue = venues.find(v => v.id === (event.venue_id || event.venueId));
-                return (
-                  <div 
-                    key={event.id}
-                    onClick={() => onViewEvent(event)}
-                    className="p-3 rounded-2xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer"
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                      <span className="font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded">
-                        {event.institution_id === '11111111-1111-1111-1111-111111111111' ? 'NMAMIT' : 'Nitte DU'}
-                      </span>
-                      <span>{event.event_date || event.date}</span>
+              {upcomingEvents.length > 0 ? (
+                upcomingEvents.map(event => {
+                  const venue = venues.find(v => v.id === (event.venue_id || event.venueId));
+                  return (
+                    <div 
+                      key={event.id}
+                      onClick={() => onViewEvent(event)}
+                      className="p-3 rounded-2xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                        <span className="font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded">
+                          Nitte University
+                        </span>
+                        <span className="font-medium text-slate-600">{event.event_date || event.date}</span>
+                      </div>
+                      <p className="font-bold text-xs text-slate-900 line-clamp-1">
+                        {event.event_title || event.eventTitle}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 truncate flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-slate-400" />
+                        <span>{venue?.name || event.venue_name} &bull; {(event.start_time || event.startTime || '').slice(0, 5)} - {(event.end_time || event.endTime || '').slice(0, 5)}</span>
+                      </p>
                     </div>
-                    <p className="font-bold text-xs text-slate-900 line-clamp-1">
-                      {event.event_title || event.eventTitle}
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-0.5 truncate flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-slate-400" />
-                      <span>{venue?.name || event.venue_name} &bull; {(event.start_time || event.startTime || '').slice(0, 5)} - {(event.end_time || event.endTime || '').slice(0, 5)}</span>
-                    </p>
-                  </div>
-                );
-              })}
+                  );
+                })
+              ) : (
+                <div className="p-6 rounded-2xl bg-slate-50 border border-slate-100 text-center">
+                  <Calendar className="w-6 h-6 text-slate-300 mx-auto mb-1" />
+                  <p className="text-xs font-semibold text-slate-600">No Upcoming Events</p>
+                  <p className="text-[11px] text-slate-400">Be the first to reserve a venue!</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -312,7 +346,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="font-extrabold text-lg text-slate-900">Official Campus Venues</h3>
-            <p className="text-xs text-slate-500">Live availability and specifications across campus facilities</p>
+            <p className="text-xs text-slate-500">Live availability and specifications across Nitte University facilities</p>
           </div>
           <button
             onClick={() => onNavigate('book')}
@@ -337,7 +371,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full">
-                    {venue.institutionId === 'nmamit' || venue.institution_id === '11111111-1111-1111-1111-111111111111' ? 'NMAMIT Campus' : 'Nitte University'}
+                    Nitte University
                   </div>
                   <div className="absolute top-3 right-3 bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-xs">
                     <CheckCircle className="w-3 h-3" />

@@ -1,5 +1,15 @@
 # Nitte EventSync – Unified Event and Venue Booking Platform
 
+<p align="center">
+  <a href="http://localhost:5173/">
+    <img src="https://img.shields.io/badge/%F0%9F%9A%80%20OPEN%20WORKING%20WEBSITE-http%3A%2F%2Flocalhost%3A5173%2F-008080?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open Working Website" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>🔗 Direct Application URL:</strong> <a href="http://localhost:5173/"><strong>http://localhost:5173/</strong></a>
+</p>
+
 ![Nitte EventSync](docs/screenshots/verified_live_hosted_supabase_dashboard.png)
 
 > **Centralized, Real-Time Campus Venue Booking & Availability System for Nitte (Deemed to be University)**
@@ -230,7 +240,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-publishable-key
 ```bash
 npm run dev
 ```
-The application will launch on `http://localhost:5173/`.
+The application will launch on 👉 [**http://localhost:5173/**](http://localhost:5173/). Click this link to open the working website directly in your browser.
 
 ### Build for Production
 ```bash

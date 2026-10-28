@@ -243,7 +243,9 @@ class DatabaseService {
         .order('event_date', { ascending: true });
 
       if (!bookingError && dbBookings) {
-        const mappedBookings: Booking[] = dbBookings.map(dbb => {
+        const mappedBookings: Booking[] = dbBookings
+          .filter(dbb => !dbb.id?.startsWith('99999999-9999-'))
+          .map(dbb => {
           const v = this.venues.find(ven => ven.id === dbb.venue_id);
           const rawStatus = dbb.status || 'Confirmed';
           const normalizedStatus: BookingStatus = 
@@ -291,6 +293,21 @@ class DatabaseService {
         });
 
         this.bookings = mappedBookings;
+      }
+
+      // Initialize Supabase Realtime channel once for automatic sync across sessions/tabs
+      if (!(this as any)._realtimeChannelInitialized) {
+        (this as any)._realtimeChannelInitialized = true;
+        try {
+          supabase
+            .channel('public_bookings_realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+              this.syncFromSupabase();
+            })
+            .subscribe();
+        } catch (e) {
+          console.warn('Supabase Realtime subscription error:', e);
+        }
       }
 
       this.saveLocal();
@@ -380,6 +397,29 @@ class DatabaseService {
       const supabase = getSupabase();
       if (supabase) {
         try {
+          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: trimmedEmail,
+            password: password,
+          });
+
+          if (authError && (authError.message.includes('Invalid login credentials') || authError.message.includes('not found') || authError.status === 400)) {
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+              email: trimmedEmail,
+              password: password,
+              options: {
+                data: {
+                  full_name: user.full_name,
+                  department: user.department,
+                }
+              }
+            });
+            if (!signUpError && signUpData.user) {
+              user.id = signUpData.user.id;
+            }
+          } else if (!authError && authData.user) {
+            user.id = authData.user.id;
+          }
+
           await supabase.from('profiles').upsert({
             id: user.id,
             full_name: user.full_name,
@@ -400,6 +440,10 @@ class DatabaseService {
   }
 
   public logout() {
+    const supabase = getSupabase();
+    if (supabase) {
+      supabase.auth.signOut().catch(err => console.warn('Supabase sign out error:', err));
+    }
     this.currentUser = null;
     localStorage.removeItem(CACHE_KEY_SESSION_USER);
     this.notify();

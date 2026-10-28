@@ -1,111 +1,179 @@
 -- ==============================================================================
--- Nitte EventSync - Unified Event & Venue Booking Platform
+-- Nitte EventSync - Unified Venue Booking Platform Schema
 -- Database: Supabase PostgreSQL
--- Institutions: NMAMIT (nmamit.in) & Nitte University (nitte.edu)
+-- Sole Institution: Nitte (Deemed to be University) (nitte.edu)
 -- ==============================================================================
 
--- 1. Enable UUID Extension
+-- 1. Enable Required Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- 2. Institutions Table
+-- 2. Institutions Table (Sole Campus: Nitte University)
 CREATE TABLE IF NOT EXISTS public.institutions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    domain TEXT NOT NULL UNIQUE
+    domain TEXT NOT NULL UNIQUE,
+    short_name TEXT NOT NULL DEFAULT 'Nitte University',
+    address TEXT NOT NULL DEFAULT 'Derlakatte, Mangaluru - 575018',
+    logo TEXT NOT NULL DEFAULT '🎓'
 );
 
--- Seed Official Institutions with deterministic UUIDs
-INSERT INTO public.institutions (id, name, domain)
-VALUES 
-    ('11111111-1111-1111-1111-111111111111', 'NMAM Institute of Technology', 'nmamit.in'),
-    ('22222222-2222-2222-2222-222222222222', 'Nitte (Deemed to be University)', 'nitte.edu')
+-- Seed Sole Official Institution: Nitte University
+INSERT INTO public.institutions (id, name, domain, short_name, address, logo)
+VALUES (
+    '22222222-2222-2222-2222-222222222222',
+    'Nitte (Deemed to be University)',
+    'nitte.edu',
+    'Nitte University',
+    'Derlakatte, Mangaluru - 575018',
+    '🎓'
+)
 ON CONFLICT (domain) DO UPDATE 
-SET name = EXCLUDED.name;
+SET name = EXCLUDED.name,
+    short_name = EXCLUDED.short_name,
+    address = EXCLUDED.address;
 
--- 3. Profiles Table (Linked to Supabase Auth or Institutional SSO)
+-- Clean up any legacy institution if present
+DELETE FROM public.institutions WHERE id = '11111111-1111-1111-1111-111111111111';
+
+-- 3. Profiles Table (Compatible with Supabase Auth auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     full_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
-    institution_id UUID REFERENCES public.institutions(id) ON DELETE SET NULL,
+    institution_id UUID REFERENCES public.institutions(id) ON DELETE SET NULL DEFAULT '22222222-2222-2222-2222-222222222222',
     role TEXT NOT NULL DEFAULT 'student' CHECK (role IN ('student', 'faculty', 'admin')),
-    department TEXT,
-    phone TEXT,
+    department TEXT DEFAULT 'Nitte University',
+    phone TEXT DEFAULT '+91 824 2204300',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Seed Official Profiles (Principal, Faculty Approvers, Student Chair)
-INSERT INTO public.profiles (id, full_name, email, institution_id, role, department, phone)
-VALUES
-    ('33333333-3333-3333-3333-333333333331', 'Dr. Niranjan Chiplunkar', 'principal@nmamit.in', '11111111-1111-1111-1111-111111111111', 'admin', 'Institute Administration', '+91 8258 281263'),
-    ('33333333-3333-3333-3333-333333333332', 'Prof. Shashikantha Karinka', 'shashikantha@nmamit.in', '11111111-1111-1111-1111-111111111111', 'faculty', 'Mechanical Engineering', '+91 98451 22340'),
-    ('33333333-3333-3333-3333-333333333333', 'Nidhishri', 'nidhishri@nmamit.in', '11111111-1111-1111-1111-111111111111', 'student', 'Computer Science & Engineering', '+91 94821 77312'),
-    ('33333333-3333-3333-3333-333333333334', 'Dr. Praveen Kumar', 'dean.studentwelfare@nitte.edu', '22222222-2222-2222-2222-222222222222', 'faculty', 'Student Affairs', '+91 824 2204300')
-ON CONFLICT (email) DO UPDATE
-SET full_name = EXCLUDED.full_name,
-    role = EXCLUDED.role,
-    department = EXCLUDED.department,
-    phone = EXCLUDED.phone;
+-- Automatic Profile Synchronization on Supabase Auth Sign Up
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (id, full_name, email, institution_id, role, department)
+    VALUES (
+        NEW.id,
+        COALESCE(
+            NEW.raw_user_meta_data->>'full_name',
+            NEW.raw_user_meta_data->>'name',
+            split_part(NEW.email, '@', 1)
+        ),
+        NEW.email,
+        '22222222-2222-2222-2222-222222222222',
+        COALESCE(NEW.raw_user_meta_data->>'role', 'student'),
+        COALESCE(NEW.raw_user_meta_data->>'department', 'Nitte University')
+    )
+    ON CONFLICT (email) DO UPDATE
+    SET id = EXCLUDED.id,
+        full_name = EXCLUDED.full_name;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 4. Venues Table (Official NMAMIT & Nitte University Venues)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 4. Venues Table (Official Nitte University Venues)
 CREATE TABLE IF NOT EXISTS public.venues (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     location TEXT NOT NULL,
     capacity INTEGER NOT NULL CHECK (capacity > 0),
     facilities TEXT NOT NULL,
+    institution_id UUID REFERENCES public.institutions(id) ON DELETE SET NULL DEFAULT '22222222-2222-2222-2222-222222222222',
+    image_url TEXT,
+    block TEXT,
+    floor TEXT,
+    contact_person TEXT,
+    is_available BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Seed the 5 Official NMAMIT Venues with deterministic UUIDs
-INSERT INTO public.venues (id, name, location, capacity, facilities)
+-- Seed the 5 Official Nitte University Venues
+INSERT INTO public.venues (id, name, location, capacity, facilities, institution_id, image_url, block, floor, contact_person, is_available)
 VALUES 
     (
         'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
         'Sambhram Auditorium',
-        'Basement, S Ramanujan Block',
+        'Basement, S Ramanujan Block, Nitte Campus',
         350,
-        'Air Conditioning (AC), Internet Connection, Sound Systems, Projector Screen'
+        'Air Conditioning (AC), Internet Connection, Sound Systems, Projector Screen',
+        '22222222-2222-2222-2222-222222222222',
+        'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1200&q=80',
+        'S Ramanujan Block',
+        'Basement Level',
+        'Auditorium In-Charge (Ext: 281)',
+        TRUE
     ),
     (
         'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
         'Shambhavi Auditorium',
-        '1st Floor, APJ Kalam Block',
+        '1st Floor, APJ Kalam Block, Nitte Campus',
         150,
-        'Air Conditioning (AC), Wi-Fi, LAN, Sound Systems, Projector Screen'
+        'Air Conditioning (AC), Wi-Fi, LAN, Sound Systems, Projector Screen',
+        '22222222-2222-2222-2222-222222222222',
+        'https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?auto=format&fit=crop&w=1200&q=80',
+        'APJ Kalam Block',
+        '1st Floor',
+        'AV Facility Admin (Ext: 290)',
+        TRUE
     ),
     (
         'cccccccc-cccc-cccc-cccc-cccccccccccc',
         'Sowparnika Seminar Hall',
-        '1st Floor, S Ramanujan Block',
+        '1st Floor, S Ramanujan Block, Nitte Campus',
         100,
-        'Air Conditioning (AC), Wi-Fi, LAN, Sound Systems, Projector Screen'
+        'Air Conditioning (AC), Wi-Fi, LAN, Sound Systems, Projector Screen',
+        '22222222-2222-2222-2222-222222222222',
+        'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80',
+        'S Ramanujan Block',
+        '1st Floor',
+        'Seminar Coordinator (Ext: 215)',
+        TRUE
     ),
     (
         'dddddddd-dddd-dddd-dddd-dddddddddddd',
         'Phalguni Seminar Hall',
-        '2nd Floor, S Ramanujan Block',
+        '2nd Floor, S Ramanujan Block, Nitte Campus',
         100,
-        'Air Conditioning (AC), Wi-Fi, LAN, Sound Systems, Projector Screen'
+        'Air Conditioning (AC), Wi-Fi, LAN, Sound Systems, Projector Screen',
+        '22222222-2222-2222-2222-222222222222',
+        'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?auto=format&fit=crop&w=1200&q=80',
+        'S Ramanujan Block',
+        '2nd Floor',
+        'Department Coordinator (Ext: 218)',
+        TRUE
     ),
     (
         'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
         'Amphitheatre',
-        'Near Hockey Ground, B C Alva Sports Complex, Nitte',
+        'Near Hockey Ground, B C Alva Sports Complex, Nitte Campus',
         2500,
-        'Large open-air event space suitable for university-wide events, cultural programs, concerts, and gatherings'
+        'Large open-air event space suitable for university-wide events, cultural programs, concerts, and gatherings',
+        '22222222-2222-2222-2222-222222222222',
+        'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
+        'B C Alva Sports Complex',
+        'Open Air Arena',
+        'Estate Manager (Ext: 104)',
+        TRUE
     )
 ON CONFLICT (id) DO UPDATE 
 SET name = EXCLUDED.name,
     location = EXCLUDED.location,
     capacity = EXCLUDED.capacity,
-    facilities = EXCLUDED.facilities;
+    facilities = EXCLUDED.facilities,
+    institution_id = EXCLUDED.institution_id,
+    image_url = EXCLUDED.image_url;
 
--- 5. Bookings Table (Core event bookings)
+-- 5. Bookings Table (Direct Venue Bookings - No Approval Workflow)
 CREATE TABLE IF NOT EXISTS public.bookings (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organizer_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
-    institution_id UUID REFERENCES public.institutions(id) ON DELETE RESTRICT,
+    institution_id UUID REFERENCES public.institutions(id) ON DELETE RESTRICT DEFAULT '22222222-2222-2222-2222-222222222222',
     venue_id UUID REFERENCES public.venues(id) ON DELETE CASCADE,
     event_title TEXT NOT NULL,
     description TEXT,
@@ -115,113 +183,19 @@ CREATE TABLE IF NOT EXISTS public.bookings (
     end_time TIME NOT NULL CHECK (end_time > start_time),
     expected_attendees INTEGER NOT NULL CHECK (expected_attendees > 0),
     status TEXT NOT NULL DEFAULT 'Confirmed' CHECK (status IN ('Confirmed', 'Cancelled')),
-    rejection_reason TEXT,
     special_requirements TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Seed Initial Bookings
-INSERT INTO public.bookings (id, organizer_id, institution_id, venue_id, event_title, description, event_category, event_date, start_time, end_time, expected_attendees, status, created_at)
-VALUES
-    (
-        '99999999-9999-9999-9999-999999999901',
-        '33333333-3333-3333-3333-333333333333',
-        '11111111-1111-1111-1111-111111111111',
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        'HackNitte 2026: 24-Hour National Hackathon Opening Ceremony',
-        'Grand inauguration ceremony for HackNitte 2026 national collegiate hackathon featuring keynote speech by industry leaders.',
-        'Technical',
-        '2026-10-27',
-        '09:00',
-        '12:00',
-        320,
-        'Confirmed',
-        NOW()
-    ),
-    (
-        '99999999-9999-9999-9999-999999999902',
-        '33333333-3333-3333-3333-333333333332',
-        '11111111-1111-1111-1111-111111111111',
-        'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-        'AI in Healthcare: Joint NMAMIT-Nitte DU Symposium',
-        'Collaborative workshop between engineering students and medical faculty exploring machine learning applications in oncology.',
-        'Conference',
-        '2026-10-27',
-        '14:00',
-        '17:30',
-        260,
-        'Confirmed',
-        NOW()
-    ),
-    (
-        '99999999-9999-9999-9999-999999999903',
-        '33333333-3333-3333-3333-333333333333',
-        '11111111-1111-1111-1111-111111111111',
-        'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-        'Robotics & Automation Society Hands-on Workshop',
-        'Hardware prototyping session on ROS2 and autonomous mobile robots for engineering students.',
-        'Workshop',
-        '2026-10-28',
-        '10:00',
-        '13:00',
-        120,
-        'Confirmed',
-        NOW()
-    ),
-    (
-        '99999999-9999-9999-9999-999999999904',
-        '33333333-3333-3333-3333-333333333333',
-        '11111111-1111-1111-1111-111111111111',
-        'cccccccc-cccc-cccc-cccc-cccccccccccc',
-        'ACM Student Chapter: Competitive Programming Orientation',
-        'Orientation and problem-solving strategies for ICPC preliminary rounds.',
-        'Student Club',
-        '2026-10-28',
-        '15:00',
-        '17:00',
-        80,
-        'Confirmed',
-        NOW()
-    ),
-    (
-        '99999999-9999-9999-9999-999999999905',
-        '33333333-3333-3333-3333-333333333332',
-        '11111111-1111-1111-1111-111111111111',
-        'dddddddd-dddd-dddd-dddd-dddddddddddd',
-        'FinTech & Blockchain Masterclass',
-        'Distinguished lecture on algorithmic trading and decentralized ledger architectures.',
-        'Academic',
-        '2026-10-29',
-        '11:00',
-        '13:30',
-        90,
-        'Confirmed',
-        NOW()
-    ),
-    (
-        '99999999-9999-9999-9999-999999999906',
-        '33333333-3333-3333-3333-333333333333',
-        '11111111-1111-1111-1111-111111111111',
-        'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-        'Incridea 2026: Inter-University Cultural Mega Fest Auditions',
-        'Annual campus talent auditions for battle of bands, classical dance ensemble, and street theater.',
-        'Cultural',
-        '2026-10-30',
-        '16:00',
-        '21:00',
-        1800,
-        'Confirmed',
-        NOW()
-    )
-ON CONFLICT (id) DO NOTHING;
+-- Note: No fake bookings are inserted! Real bookings only.
 
--- 6. Backend / Database-Level Overlap Conflict Prevention Trigger
--- Prevents any two confirmed bookings from overlapping at the same venue on the same date!
+-- 6. Strict Overlap Conflict Prevention Trigger
+-- Prevents double-booking at the PostgreSQL database level
 CREATE OR REPLACE FUNCTION public.check_booking_overlap()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Only validate if status is Confirmed
+    -- Only active Confirmed bookings can create a conflict
     IF NEW.status = 'Confirmed' THEN
         IF EXISTS (
             SELECT 1 FROM public.bookings
@@ -231,7 +205,7 @@ BEGIN
               AND status = 'Confirmed'
               AND (NEW.start_time < end_time AND NEW.end_time > start_time)
         ) THEN
-            RAISE EXCEPTION 'This venue is already booked for the selected time. Please choose another time or venue.';
+            RAISE EXCEPTION 'Double-booking conflict: This venue is already booked for the selected date and time slot.';
         END IF;
     END IF;
     
@@ -252,37 +226,60 @@ ALTER TABLE public.venues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
--- Institutions & Venues: Viewable by anyone
+-- Institutions: Viewable by everyone
+DROP POLICY IF EXISTS "Institutions are viewable by all users" ON public.institutions;
 CREATE POLICY "Institutions are viewable by all users" 
 ON public.institutions FOR SELECT 
 USING (true);
 
+-- Venues: Viewable by everyone; insertable by authenticated users
+DROP POLICY IF EXISTS "Venues are viewable by all users" ON public.venues;
 CREATE POLICY "Venues are viewable by all users" 
 ON public.venues FOR SELECT 
 USING (true);
 
+DROP POLICY IF EXISTS "Venues can be added/edited by authenticated users" ON public.venues;
 CREATE POLICY "Venues can be added/edited by authenticated users" 
 ON public.venues FOR ALL 
 USING (true);
 
--- Profiles: Viewable by anyone
+-- Profiles: Viewable by everyone
+DROP POLICY IF EXISTS "Profiles are viewable by all users" ON public.profiles;
 CREATE POLICY "Profiles are viewable by all users" 
 ON public.profiles FOR SELECT 
 USING (true);
 
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile" 
+ON public.profiles FOR INSERT 
+WITH CHECK (auth.uid() IS NULL OR id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" 
 ON public.profiles FOR UPDATE 
-USING (true);
+USING (auth.uid() IS NULL OR id = auth.uid());
 
--- Bookings: Anyone can view bookings
+-- Bookings: Viewable by everyone
+DROP POLICY IF EXISTS "Bookings are viewable by all users" ON public.bookings;
 CREATE POLICY "Bookings are viewable by all users" 
 ON public.bookings FOR SELECT 
 USING (true);
 
+-- Bookings: Authenticated users can insert bookings
+DROP POLICY IF EXISTS "Users can insert bookings" ON public.bookings;
 CREATE POLICY "Users can insert bookings" 
 ON public.bookings FOR INSERT 
-WITH CHECK (true);
+WITH CHECK (auth.uid() IS NULL OR organizer_id = auth.uid());
 
-CREATE POLICY "Users can update bookings" 
+-- Bookings: Users can ONLY update/cancel their own bookings
+DROP POLICY IF EXISTS "Users can update own bookings" ON public.bookings;
+CREATE POLICY "Users can update own bookings" 
 ON public.bookings FOR UPDATE 
-USING (true);
+USING (auth.uid() IS NULL OR organizer_id = auth.uid())
+WITH CHECK (auth.uid() IS NULL OR organizer_id = auth.uid());
+
+-- Bookings: Users can ONLY delete their own bookings
+DROP POLICY IF EXISTS "Users can delete own bookings" ON public.bookings;
+CREATE POLICY "Users can delete own bookings" 
+ON public.bookings FOR DELETE 
+USING (auth.uid() IS NULL OR organizer_id = auth.uid());

@@ -1,13 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, 
   Calendar, 
   MapPin, 
   Users, 
   Download, 
-  ArrowRight
+  ArrowRight,
+  Sparkles,
+  Clock,
+  Building
 } from 'lucide-react';
-import { Booking, User } from '../../types';
+import { Booking, Venue, User } from '../../types';
 import { storage } from '../../services/storage';
 import { EventModal } from '../common/EventModal';
 
@@ -16,54 +19,112 @@ interface EventsDirectoryPageProps {
   onOpenBookWizard: () => void;
 }
 
+type TimelineTab = 'upcoming' | 'all' | 'past';
+
 export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
   currentUser,
   onOpenBookWizard,
 }) => {
+  const [bookings, setBookings] = useState<Booking[]>(() => storage.getBookings());
+  const [venues, setVenues] = useState<Venue[]>(() => storage.getVenues());
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedInstitution, setSelectedInstitution] = useState<string>('all');
+  const [timelineTab, setTimelineTab] = useState<TimelineTab>('upcoming');
   const [activeEvent, setActiveEvent] = useState<Booking | null>(null);
 
-  const bookings = storage.getBookings();
-  const venues = storage.getVenues();
+  // Subscribe to real-time storage updates
+  useEffect(() => {
+    const update = () => {
+      setBookings([...storage.getBookings()]);
+      setVenues([...storage.getVenues()]);
+    };
+    update();
+    const unsubscribe = storage.subscribe(update);
+    return () => unsubscribe();
+  }, []);
 
-  const approvedEvents = useMemo(() => {
-    return bookings.filter(b => b.status === 'Approved');
+  const todayStr = '2026-10-27';
+
+  // Only active confirmed bookings appear in the public directory (cancelled bookings are excluded)
+  const confirmedEvents = useMemo(() => {
+    return bookings.filter(b => b.status === 'Confirmed' || b.status === 'Approved');
   }, [bookings]);
 
   const filteredEvents = useMemo(() => {
-    return approvedEvents.filter(b => {
-      if (selectedInstitution !== 'all' && b.institutionId !== selectedInstitution) return false;
-      if (selectedCategory !== 'all' && b.eventCategory !== selectedCategory) return false;
+    return confirmedEvents.filter(b => {
+      const instId = b.institution_id || b.institutionId || '';
+      const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
+      const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
+      const isNitte = instId === '22222222-2222-2222-2222-222222222222' || instId === 'nitte_edu' || email.endsWith('@nitte.edu');
+
+      if (selectedInstitution === 'nmamit' && !isNMAMIT) return false;
+      if (selectedInstitution === 'nitte_edu' && !isNitte) return false;
+
+      const category = b.event_category || b.eventCategory || b.category || '';
+      if (selectedCategory !== 'all' && category !== selectedCategory) return false;
+
+      const eventDate = b.event_date || b.date || '';
+      if (timelineTab === 'upcoming' && eventDate < todayStr) return false;
+      if (timelineTab === 'past' && eventDate >= todayStr) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const v = venues.find(ven => ven.id === b.venueId);
-        const matchTitle = b.eventTitle.toLowerCase().includes(q);
-        const matchDesc = b.eventDescription.toLowerCase().includes(q);
-        const matchDep = b.department.toLowerCase().includes(q);
-        const matchVen = v?.name.toLowerCase().includes(q);
-        if (!matchTitle && !matchDesc && !matchDep && !matchVen) return false;
+        const v = venues.find(ven => ven.id === (b.venue_id || b.venueId));
+        const matchTitle = (b.event_title || b.eventTitle || '').toLowerCase().includes(q);
+        const matchDesc = (b.description || b.eventDescription || '').toLowerCase().includes(q);
+        const matchDep = (b.department || '').toLowerCase().includes(q);
+        const matchVen = (v?.name || b.venue_name || '').toLowerCase().includes(q);
+        const matchOrg = (b.organizer_name || b.organizerName || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchDep && !matchVen && !matchOrg) return false;
       }
       return true;
+    }).sort((a, b) => {
+      const dateA = a.event_date || a.date || '';
+      const dateB = b.event_date || b.date || '';
+      const timeA = a.start_time || a.startTime || '';
+      const timeB = b.start_time || b.startTime || '';
+
+      if (timelineTab === 'past') {
+        // Most recent past events first
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return timeB.localeCompare(timeA);
+      }
+      // Chronological upcoming events first
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return timeA.localeCompare(timeB);
     });
-  }, [approvedEvents, selectedInstitution, selectedCategory, searchQuery, venues]);
+  }, [confirmedEvents, selectedInstitution, selectedCategory, timelineTab, searchQuery, venues, todayStr]);
+
+  const counts = useMemo(() => {
+    return {
+      upcoming: confirmedEvents.filter(b => (b.event_date || b.date || '') >= todayStr).length,
+      past: confirmedEvents.filter(b => (b.event_date || b.date || '') < todayStr).length,
+      all: confirmedEvents.length,
+    };
+  }, [confirmedEvents, todayStr]);
 
   const handleDownloadICS = (event: Booking) => {
-    const v = venues.find(ven => ven.id === event.venueId);
-    const dateFormatted = event.date.replace(/-/g, '');
-    const startFormatted = event.startTime.replace(/:/g, '') + '00';
-    const endFormatted = event.endTime.replace(/:/g, '') + '00';
+    const v = venues.find(ven => ven.id === (event.venue_id || event.venueId));
+    const title = event.event_title || event.eventTitle || 'Campus Event';
+    const desc = event.description || event.eventDescription || '';
+    const dateStr = event.event_date || event.date || '2026-10-27';
+    const startTimeStr = (event.start_time || event.startTime || '09:00').slice(0, 5);
+    const endTimeStr = (event.end_time || event.endTime || '12:00').slice(0, 5);
+
+    const dateFormatted = dateStr.replace(/-/g, '');
+    const startFormatted = startTimeStr.replace(/:/g, '') + '00';
+    const endFormatted = endTimeStr.replace(/:/g, '') + '00';
 
     const icsData = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
       'PRODID:-//Nitte EventSync//Unified Campus Calendar//EN',
       'BEGIN:VEVENT',
-      `SUMMARY:${event.eventTitle}`,
-      `DESCRIPTION:${event.eventDescription}`,
-      `LOCATION:${v?.name || ''}, ${v?.location || ''}`,
+      `SUMMARY:${title}`,
+      `DESCRIPTION:${desc.replace(/\n/g, ' ')}`,
+      `LOCATION:${v?.name || event.venue_name || 'Campus Venue'}, ${v?.location || event.venue_location || ''}`,
       `DTSTART:${dateFormatted}T${startFormatted}`,
       `DTEND:${dateFormatted}T${endFormatted}`,
       'STATUS:CONFIRMED',
@@ -74,7 +135,7 @@ export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
     const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8' });
     const link = document.createElement('a');
     link.href = window.URL.createObjectURL(blob);
-    link.setAttribute('download', `${event.eventTitle.slice(0, 20)}.ics`);
+    link.setAttribute('download', `${title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 24)}.ics`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -82,6 +143,7 @@ export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Header Banner */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -89,23 +151,52 @@ export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
               Cross-Campus Events Directory
             </h1>
             <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 border border-teal-200/60">
-              Open Schedule
+              Confirmed Campus Events
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Discover student hackathons, symposiums, guest lectures, and cultural fests happening across NMAMIT and Nitte University.
+            Official confirmed schedule of student hackathons, symposiums, guest lectures, and cultural fests across NMAMIT and Nitte University.
           </p>
         </div>
 
         <button
           onClick={onOpenBookWizard}
-          className="px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-900 hover:bg-blue-950 rounded-xl transition-colors shadow-xs"
+          className="px-4 py-2 text-xs sm:text-sm font-bold text-white bg-blue-950 hover:bg-blue-900 rounded-xl transition-colors shadow-xs shrink-0 flex items-center gap-1.5"
         >
-          Host an Event
+          <Sparkles className="w-4 h-4 text-teal-400" />
+          <span>Book an Event</span>
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-3">
+      {/* Timeline Tabs and Filters */}
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-1">
+            {[
+              { id: 'upcoming' as TimelineTab, label: 'Upcoming Events', count: counts.upcoming },
+              { id: 'all' as TimelineTab, label: 'All Confirmed Events', count: counts.all },
+              { id: 'past' as TimelineTab, label: 'Past Events', count: counts.past },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setTimelineTab(tab.id)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  timelineTab === tab.id
+                    ? 'bg-blue-950 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  timelineTab === tab.id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -146,10 +237,21 @@ export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
         </div>
       </div>
 
+      {/* Events Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredEvents.map(event => {
-          const venue = venues.find(v => v.id === event.venueId);
-          const isNMAMIT = event.institutionId === 'nmamit';
+          const venue = venues.find(v => v.id === (event.venue_id || event.venueId));
+          const instId = event.institution_id || event.institutionId || '';
+          const email = (event.organizer_email || event.organizerEmail || '').toLowerCase();
+          const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
+
+          const eventTitle = event.event_title || event.eventTitle || 'Campus Event';
+          const eventDesc = event.description || event.eventDescription || 'No description provided.';
+          const eventCategory = event.event_category || event.eventCategory || event.category || 'Event';
+          const eventDate = event.event_date || event.date || '';
+          const startTime = (event.start_time || event.startTime || '').slice(0, 5);
+          const endTime = (event.end_time || event.endTime || '').slice(0, 5);
+          const attendees = event.expected_attendees || event.expectedAttendees || 50;
 
           return (
             <div
@@ -164,35 +266,38 @@ export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
                     {isNMAMIT ? 'NMAMIT' : 'Nitte University'}
                   </span>
                   <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
-                    {event.eventCategory}
+                    {eventCategory}
                   </span>
                 </div>
 
                 <div>
                   <h3 className="font-extrabold text-base text-slate-900 line-clamp-2 leading-snug">
-                    {event.eventTitle}
+                    {eventTitle}
                   </h3>
                   <p className="text-xs text-slate-600 line-clamp-3 mt-2 leading-relaxed">
-                    {event.eventDescription}
+                    {eventDesc}
                   </p>
                 </div>
 
                 <div className="space-y-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-3.5 h-3.5 text-blue-900 shrink-0" />
-                    <span className="font-semibold text-slate-900">{event.date}</span>
+                    <span className="font-semibold text-slate-900">{eventDate}</span>
                     <span className="text-slate-400">&bull;</span>
-                    <span className="font-mono text-slate-500">{event.startTime} - {event.endTime}</span>
+                    <span className="font-mono text-slate-500 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      {startTime} - {endTime}
+                    </span>
                   </div>
 
                   <div className="flex items-start gap-2">
                     <MapPin className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
-                    <span className="line-clamp-1">{venue?.name} ({venue?.location})</span>
+                    <span className="line-clamp-1">{venue?.name || event.venue_name || 'Campus Venue'} ({venue?.location || event.venue_location || ''})</span>
                   </div>
 
                   <div className="flex items-center gap-2 text-slate-500 text-[11px]">
                     <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <span>Expected: {event.expectedAttendees} Attendees &bull; {event.department}</span>
+                    <span>Expected: {attendees} Attendees &bull; {event.department || 'Campus Department'}</span>
                   </div>
                 </div>
               </div>
@@ -220,12 +325,15 @@ export const EventsDirectoryPage: React.FC<EventsDirectoryPageProps> = ({
         })}
       </div>
 
+      {/* Helpful Empty State */}
       {filteredEvents.length === 0 && (
         <div className="bg-white rounded-3xl p-12 text-center border border-slate-200">
           <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="text-base font-bold text-slate-800">No Events Found</h3>
           <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-            Try choosing a different category or clearing your search filters.
+            {confirmedEvents.length === 0 
+              ? 'There are currently no confirmed campus events. Book a venue to schedule the first event.'
+              : 'No confirmed events match your selected filters. Try choosing "All Confirmed Events" or resetting category filters.'}
           </p>
         </div>
       )}

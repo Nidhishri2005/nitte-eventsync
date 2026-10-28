@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
+  User, 
   Bell, 
   PlusCircle, 
   Menu, 
@@ -8,10 +9,9 @@ import {
   ChevronDown, 
   LogOut,
   Building,
-  User,
   CheckCircle2
 } from 'lucide-react';
-import { db } from '../../services/db';
+import { db, getUserDisplayName } from '../../services/db';
 import { Profile } from '../../types';
 
 interface HeaderProps {
@@ -34,17 +34,26 @@ export const Header: React.FC<HeaderProps> = ({
   const currentProfile = currentProfileProp || currentUser || db.getCurrentProfile();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [, setTick] = useState(0);
+
+  // Subscribe to reactive database updates
+  useEffect(() => {
+    const unsubscribe = db.subscribe(() => {
+      setTick(t => t + 1);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const bookings = db.getBookings();
   const userBookings = bookings.filter(b => 
     (b.organizer_id === currentProfile?.id || (b.organizer_email || '').toLowerCase() === (currentProfile?.email || '').toLowerCase()) &&
-    b.status === 'Confirmed'
+    (b.status === 'Confirmed' || b.status === 'Approved')
   );
 
   const isNitte = currentProfile?.email?.toLowerCase().endsWith('@nitte.edu') || 
                   currentProfile?.institution_id === '22222222-2222-2222-2222-222222222222';
 
-  const userDisplayName = currentProfile?.full_name || currentProfile?.name || 'Campus Member';
+  const userDisplayName = getUserDisplayName(currentProfile);
   const userEmail = currentProfile?.email || '';
 
   return (
@@ -102,24 +111,24 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Right: Book Venue CTA, Notifications, User Profile & Logout */}
-          <div className="flex items-center gap-2.5 shrink-0">
+          {/* Right: Book Venue, Notifications, User Profile */}
+          <div className="flex items-center gap-2 shrink-0">
             
-            {/* Direct Book Venue CTA Button */}
+            {/* Book Venue CTA */}
             <button
               onClick={onOpenBookModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-blue-900 to-teal-700 hover:from-blue-950 hover:to-teal-800 rounded-xl shadow-xs hover:shadow transition-all transform hover:-translate-y-0.5 cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-blue-900 to-teal-700 hover:from-blue-950 hover:to-teal-800 rounded-xl shadow-xs hover:shadow transition-all transform hover:-translate-y-0.5 cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Book Venue</span>
             </button>
 
-            {/* Confirmed Reservations Notifications */}
+            {/* Notifications (Confirmed Reservations) */}
             <div className="relative">
               <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className="relative p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                title="My Reservations"
+                title="Your Confirmed Reservations"
               >
                 <Bell className="w-5 h-5" />
                 {userBookings.length > 0 && (
@@ -135,7 +144,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <span className="font-bold text-xs text-slate-800">
                       My Confirmed Reservations
                     </span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] bg-teal-100 text-teal-800 font-bold px-2 py-0.5 rounded-full">
                       {userBookings.length} Active
                     </span>
                   </div>
@@ -143,14 +152,14 @@ export const Header: React.FC<HeaderProps> = ({
                     {userBookings.slice(0, 5).map(b => (
                       <div key={b.id} className="p-3 hover:bg-slate-50 transition-colors">
                         <div className="flex items-center justify-between gap-1">
-                          <p className="text-xs font-bold text-slate-900 line-clamp-1">{b.event_title}</p>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
-                            <CheckCircle2 className="w-2.5 h-2.5" />
+                          <p className="text-xs font-bold text-slate-900 line-clamp-1">{b.event_title || b.eventTitle}</p>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-1 shrink-0">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                             Confirmed
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{b.event_date} &bull; {b.start_time} - {b.end_time}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{b.venue_name}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{b.event_date || b.date} &bull; {b.start_time || b.startTime} - {b.end_time || b.endTime}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{b.venue_name || b.venueName}</p>
                       </div>
                     ))}
                     {userBookings.length === 0 && (

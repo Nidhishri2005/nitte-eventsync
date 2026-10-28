@@ -1,5 +1,7 @@
-import { db } from './db';
+import { db, getUserDisplayName } from './db';
 import { Booking, Venue, Profile, VenueAvailabilityCheck } from '../types';
+
+export { getUserDisplayName };
 
 class StorageService {
   public subscribe(listener: () => void): () => void {
@@ -24,6 +26,10 @@ class StorageService {
 
   public getActiveUser(): Profile | null {
     return db.getActiveUser();
+  }
+
+  public getUserDisplayName(profile?: Profile | null, email?: string): string {
+    return getUserDisplayName(profile, email);
   }
 
   public isLoggedIn(): boolean {

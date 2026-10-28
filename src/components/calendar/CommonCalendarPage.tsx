@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
   Search, 
   MapPin, 
-  PlusCircle
+  PlusCircle,
+  Clock
 } from 'lucide-react';
 import { Booking, Venue, User } from '../../types';
 import { storage } from '../../services/storage';
@@ -24,6 +25,9 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
   const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 9, 27));
   const [viewMode, setViewMode] = useState<CalendarViewMode>('month');
 
+  const [bookings, setBookings] = useState<Booking[]>(() => storage.getBookings());
+  const [venues, setVenues] = useState<Venue[]>(() => storage.getVenues());
+
   const [selectedInstitution, setSelectedInstitution] = useState<string>('all');
   const [selectedVenueId, setSelectedVenueId] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -32,30 +36,54 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
 
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
 
-  const bookings = storage.getBookings();
-  const venues = storage.getVenues();
+  // Subscribe to real-time storage updates
+  useEffect(() => {
+    const update = () => {
+      setBookings([...storage.getBookings()]);
+      setVenues([...storage.getVenues()]);
+    };
+    update();
+    const unsubscribe = storage.subscribe(update);
+    return () => unsubscribe();
+  }, []);
 
   const filteredBookings = useMemo(() => {
     return bookings.filter(b => {
-      if (selectedInstitution !== 'all' && b.institutionId !== selectedInstitution) {
+      const instId = b.institution_id || b.institutionId || '';
+      const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
+      const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
+      const isNitte = instId === '22222222-2222-2222-2222-222222222222' || instId === 'nitte_edu' || email.endsWith('@nitte.edu');
+
+      if (selectedInstitution === 'nmamit' && !isNMAMIT) return false;
+      if (selectedInstitution === 'nitte_edu' && !isNitte) return false;
+
+      const vId = b.venue_id || b.venueId;
+      if (selectedVenueId !== 'all' && vId !== selectedVenueId) {
         return false;
       }
-      if (selectedVenueId !== 'all' && b.venueId !== selectedVenueId) {
+
+      const cat = b.event_category || b.eventCategory || b.category;
+      if (selectedCategory !== 'all' && cat !== selectedCategory) {
         return false;
       }
-      if (selectedCategory !== 'all' && b.eventCategory !== selectedCategory) {
-        return false;
+
+      const isCancelled = b.status === 'Cancelled';
+      if (selectedStatus === 'Cancelled') {
+        if (!isCancelled) return false;
+      } else if (selectedStatus === 'Confirmed') {
+        if (isCancelled) return false;
+      } else if (selectedStatus === 'all') {
+        // By default, do not display cancelled bookings as active events
+        if (isCancelled) return false;
       }
-      if (selectedStatus !== 'all' && b.status !== selectedStatus) {
-        return false;
-      }
+
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const venue = venues.find(v => v.id === b.venueId);
-        const matchTitle = b.eventTitle.toLowerCase().includes(query);
-        const matchOrganizer = b.organizerName.toLowerCase().includes(query);
-        const matchVenue = venue?.name.toLowerCase().includes(query);
-        const matchDep = b.department.toLowerCase().includes(query);
+        const venue = venues.find(v => v.id === vId);
+        const matchTitle = (b.event_title || b.eventTitle || '').toLowerCase().includes(query);
+        const matchOrganizer = (b.organizer_name || b.organizerName || '').toLowerCase().includes(query);
+        const matchVenue = (venue?.name || b.venue_name || '').toLowerCase().includes(query);
+        const matchDep = (b.department || '').toLowerCase().includes(query);
         if (!matchTitle && !matchOrganizer && !matchVenue && !matchDep) {
           return false;
         }
@@ -232,7 +260,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
 
           <div className="flex items-center gap-3 text-[11px] text-slate-500">
             <span className="flex items-center gap-1 font-medium text-emerald-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Confirmed
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Confirmed Bookings
             </span>
             <span className="flex items-center gap-1 text-slate-400">
               <span className="w-2 h-2 rounded-full bg-slate-400"></span> Cancelled
@@ -269,7 +297,7 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
           >
             <option value="all">All Venues</option>
             {venues.map(v => (
-              <option key={v.id} value={v.id}>{v.name} ({v.institutionId === 'nmamit' ? 'NMAMIT' : 'Nitte DU'})</option>
+              <option key={v.id} value={v.id}>{v.name} ({v.institutionId === 'nmamit' || v.institution_id === '11111111-1111-1111-1111-111111111111' ? 'NMAMIT' : 'Nitte DU'})</option>
             ))}
           </select>
 
@@ -294,9 +322,9 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
             onChange={e => setSelectedStatus(e.target.value)}
             className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white text-slate-700 font-medium"
           >
-            <option value="all">All Statuses</option>
-            <option value="Confirmed">Confirmed Only</option>
-            <option value="Cancelled">Cancelled</option>
+            <option value="all">Active Events Only</option>
+            <option value="Confirmed">Confirmed Bookings</option>
+            <option value="Cancelled">Cancelled Bookings</option>
           </select>
         </div>
       </div>
@@ -355,65 +383,70 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
                   const isToday = cd.dateStr === '2026-10-27';
 
                   return (
-                <div
-                  key={index}
-                  className={`p-1.5 sm:p-2 min-h-[110px] flex flex-col justify-between transition-colors ${
-                    !cd.isCurrentMonth ? 'bg-slate-50/50 text-slate-300' : 'bg-white hover:bg-slate-50/40'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
-                      isToday 
-                        ? 'bg-blue-900 text-white font-extrabold shadow-xs' 
-                        : cd.isCurrentMonth ? 'text-slate-700' : 'text-slate-300'
-                    }`}>
-                      {cd.dayNumber}
-                    </span>
+                    <div
+                      key={index}
+                      className={`p-1.5 sm:p-2 min-h-[110px] flex flex-col justify-between transition-colors ${
+                        !cd.isCurrentMonth ? 'bg-slate-50/50 text-slate-300' : 'bg-white hover:bg-slate-50/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center ${
+                          isToday 
+                            ? 'bg-blue-900 text-white font-extrabold shadow-xs' 
+                            : cd.isCurrentMonth ? 'text-slate-700' : 'text-slate-300'
+                        }`}>
+                          {cd.dayNumber}
+                        </span>
 
-                    {dayBookings.length > 0 && cd.isCurrentMonth && (
-                      <span className="text-[10px] font-bold text-slate-400">
-                        {dayBookings.length} {dayBookings.length === 1 ? 'event' : 'events'}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="space-y-1 overflow-y-auto max-h-[85px] flex-1">
-                    {dayBookings.map((b) => {
-                      const venue = venues.find(v => v.id === b.venueId);
-                      const isNMAMIT = b.institutionId === 'nmamit';
-
-                      return (
-                        <div
-                          key={b.id}
-                          onClick={() => setActiveBooking(b)}
-                          className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-medium leading-tight shadow-xs transition-all hover:scale-[1.02] flex items-center justify-between gap-1 ${
-                            isNMAMIT
-                              ? 'bg-blue-900 text-white hover:bg-blue-950'
-                              : 'bg-teal-700 text-white hover:bg-teal-800'
-                          } ${
-                            b.status === 'Cancelled' ? 'opacity-50 line-through' : ''
-                          }`}
-                          title={`${b.eventTitle} (${venue?.name || ''}) [${b.startTime} - ${b.endTime}]`}
-                        >
-                          <span className="truncate flex-1 font-semibold">
-                            {b.eventTitle}
+                        {dayBookings.length > 0 && cd.isCurrentMonth && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {dayBookings.length} {dayBookings.length === 1 ? 'event' : 'events'}
                           </span>
-                          <span className="text-[9px] opacity-80 shrink-0 font-mono">
-                            {b.startTime}
-                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1 overflow-y-auto max-h-[85px] flex-1">
+                        {dayBookings.map((b) => {
+                          const venue = venues.find(v => v.id === (b.venue_id || b.venueId));
+                          const instId = b.institution_id || b.institutionId || '';
+                          const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
+                          const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
+
+                          const title = b.event_title || b.eventTitle || 'Campus Booking';
+                          const startTime = (b.start_time || b.startTime || '').slice(0, 5);
+
+                          return (
+                            <div
+                              key={b.id}
+                              onClick={() => setActiveBooking(b)}
+                              className={`cursor-pointer px-2 py-1 rounded-md text-[11px] font-medium leading-tight shadow-xs transition-all hover:scale-[1.02] flex items-center justify-between gap-1 ${
+                                isNMAMIT
+                                  ? 'bg-blue-900 text-white hover:bg-blue-950'
+                                  : 'bg-teal-700 text-white hover:bg-teal-800'
+                              } ${
+                                b.status === 'Cancelled' ? 'opacity-50 line-through' : ''
+                              }`}
+                              title={`${title} (${venue?.name || b.venue_name || 'Venue'}) [${startTime} - ${(b.end_time || b.endTime || '').slice(0, 5)}]`}
+                            >
+                              <span className="truncate flex-1 font-semibold">
+                                {title}
+                              </span>
+                              <span className="text-[9px] opacity-80 shrink-0 font-mono">
+                                {startTime}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {dayBookings.length === 0 && cd.isCurrentMonth && (
+                        <div className="text-[10px] text-slate-300 text-center py-2 opacity-0 hover:opacity-100 transition-opacity">
+                          Free slot
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  {dayBookings.length === 0 && cd.isCurrentMonth && (
-                    <div className="text-[10px] text-slate-300 text-center py-2 opacity-0 hover:opacity-100 transition-opacity">
-                      Free slot
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -425,59 +458,66 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
           <div className="overflow-x-auto">
             <div className="min-w-[680px]">
               <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-200 text-center py-3 text-xs font-bold text-slate-700">
-            {weekDays.map(wd => {
-              const isToday = wd.dateStr === '2026-10-27';
-              return (
-                <div key={wd.dateStr} className="space-y-1">
-                  <p className="uppercase tracking-wider text-[11px] text-slate-500">{wd.dayName}</p>
-                  <p className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center font-bold ${
-                    isToday ? 'bg-blue-900 text-white' : 'text-slate-800'
-                  }`}>
-                    {wd.dayNumber}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="grid grid-cols-7 divide-x divide-slate-100 min-h-[500px]">
-            {weekDays.map(wd => {
-              const dayBookings = filteredBookings.filter(b => (b.event_date || b.date) === wd.dateStr);
-
-              return (
-                <div key={wd.dateStr} className="p-2.5 space-y-2 bg-white">
-                  {dayBookings.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-xs text-slate-300 italic text-center p-4">
-                      No events booked
+                {weekDays.map(wd => {
+                  const isToday = wd.dateStr === '2026-10-27';
+                  return (
+                    <div key={wd.dateStr} className="space-y-1">
+                      <p className="uppercase tracking-wider text-[11px] text-slate-500">{wd.dayName}</p>
+                      <p className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center font-bold ${
+                        isToday ? 'bg-blue-900 text-white' : 'text-slate-800'
+                      }`}>
+                        {wd.dayNumber}
+                      </p>
                     </div>
-                  ) : (
-                    dayBookings.map(b => {
-                      const venue = venues.find(v => v.id === (b.venue_id || b.venueId));
-                      const isNMAMIT = b.institution_id === '11111111-1111-1111-1111-111111111111' || b.institutionId === 'nmamit';
-                      return (
-                        <div
-                          key={b.id}
-                          onClick={() => setActiveBooking(b)}
-                          className={`cursor-pointer p-2.5 rounded-xl text-xs text-white shadow-xs transition-transform hover:-translate-y-0.5 space-y-1 ${
-                            isNMAMIT ? 'bg-blue-900' : 'bg-teal-700'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-[10px] text-slate-200">
-                            <span className="font-mono">{b.start_time || b.startTime} - {b.end_time || b.endTime}</span>
-                            <span className="font-bold">{b.status}</span>
-                          </div>
-                          <p className="font-bold text-white line-clamp-2">{b.event_title || b.eventTitle}</p>
-                          <p className="text-[10px] text-slate-200 truncate flex items-center gap-1">
-                            <MapPin className="w-3 h-3 shrink-0" />
-                            {venue?.name || b.venue_name}
-                          </p>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-7 divide-x divide-slate-100 min-h-[500px]">
+                {weekDays.map(wd => {
+                  const dayBookings = filteredBookings.filter(b => (b.event_date || b.date) === wd.dateStr);
+
+                  return (
+                    <div key={wd.dateStr} className="p-2.5 space-y-2 bg-white">
+                      {dayBookings.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-xs text-slate-300 italic text-center p-4">
+                          No events booked
                         </div>
-                      );
-                    })
-                  )}
-                </div>
-              );
-            })}
+                      ) : (
+                        dayBookings.map(b => {
+                          const venue = venues.find(v => v.id === (b.venue_id || b.venueId));
+                          const instId = b.institution_id || b.institutionId || '';
+                          const email = (b.organizer_email || b.organizerEmail || '').toLowerCase();
+                          const isNMAMIT = instId === '11111111-1111-1111-1111-111111111111' || instId === 'nmamit' || email.endsWith('@nmamit.in');
+
+                          const title = b.event_title || b.eventTitle || 'Campus Booking';
+                          const startTime = (b.start_time || b.startTime || '').slice(0, 5);
+                          const endTime = (b.end_time || b.endTime || '').slice(0, 5);
+
+                          return (
+                            <div
+                              key={b.id}
+                              onClick={() => setActiveBooking(b)}
+                              className={`cursor-pointer p-2.5 rounded-xl text-xs text-white shadow-xs transition-transform hover:-translate-y-0.5 space-y-1 ${
+                                isNMAMIT ? 'bg-blue-900' : 'bg-teal-700'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between text-[10px] text-slate-200">
+                                <span className="font-mono">{startTime} - {endTime}</span>
+                                <span className="font-bold">{b.status}</span>
+                              </div>
+                              <p className="font-bold text-white line-clamp-2">{title}</p>
+                              <p className="text-[10px] text-slate-200 truncate flex items-center gap-1">
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                {venue?.name || b.venue_name || 'Venue'}
+                              </p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -502,14 +542,17 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
 
           <div className="space-y-4">
             {venues.map(v => {
-              const dayBookings = filteredBookings.filter(b => b.venueId === v.id && b.date === currentDayStr);
+              const dayBookings = filteredBookings.filter(b => 
+                (b.venue_id === v.id || b.venueId === v.id) && 
+                (b.event_date === currentDayStr || b.date === currentDayStr)
+              );
 
               return (
                 <div key={v.id} className="p-4 rounded-2xl border border-slate-200/80 bg-slate-50/50 space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
                       <span className={`w-2.5 h-2.5 rounded-full ${
-                        v.institutionId === 'nmamit' ? 'bg-blue-900' : 'bg-teal-600'
+                        v.institutionId === 'nmamit' || v.institution_id === '11111111-1111-1111-1111-111111111111' ? 'bg-blue-900' : 'bg-teal-600'
                       }`} />
                       <div>
                         <h4 className="font-bold text-sm text-slate-900">{v.name}</h4>
@@ -529,24 +572,31 @@ export const CommonCalendarPage: React.FC<CommonCalendarPageProps> = ({
 
                   {dayBookings.length > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-2 border-t border-slate-200/60">
-                      {dayBookings.map(b => (
-                        <div
-                          key={b.id}
-                          onClick={() => setActiveBooking(b)}
-                          className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-blue-900 cursor-pointer transition-all"
-                        >
-                          <div className="flex items-center justify-between text-xs font-bold text-slate-800">
-                            <span className="text-blue-900">{b.startTime} &mdash; {b.endTime}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded ${
-                              b.status === 'Cancelled' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-800'
-                            }`}>
-                              {b.status}
-                            </span>
+                      {dayBookings.map(b => {
+                        const title = b.event_title || b.eventTitle || 'Campus Booking';
+                        const startTime = (b.start_time || b.startTime || '').slice(0, 5);
+                        const endTime = (b.end_time || b.endTime || '').slice(0, 5);
+                        const host = b.organizer_name || b.organizerName || 'Campus Member';
+
+                        return (
+                          <div
+                            key={b.id}
+                            onClick={() => setActiveBooking(b)}
+                            className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs hover:border-blue-900 cursor-pointer transition-all"
+                          >
+                            <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                              <span className="text-blue-900">{startTime} &mdash; {endTime}</span>
+                              <span className={`text-[10px] px-2 py-0.5 rounded ${
+                                b.status === 'Cancelled' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-800'
+                              }`}>
+                                {b.status}
+                              </span>
+                            </div>
+                            <p className="font-semibold text-xs text-slate-900 mt-1">{title}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Host: {host} {b.department ? `(${b.department})` : ''}</p>
                           </div>
-                          <p className="font-semibold text-xs text-slate-900 mt-1">{b.eventTitle}</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">Host: {b.organizerName} ({b.department})</p>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

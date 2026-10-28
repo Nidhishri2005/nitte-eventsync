@@ -8,14 +8,41 @@ const CACHE_KEY_PROFILES = 'nitte_eventsync_db_profiles_v3';
 const CACHE_KEY_SESSION_USER = 'nitte_eventsync_session_user';
 
 export function formatNameFromEmail(email: string): string {
-  const username = email.split('@')[0] || '';
-  const cleaned = username.replace(/[._\-]+/g, ' ').replace(/\d+/g, '').trim();
-  if (!cleaned) return 'Campus Member';
-  return cleaned
-    .split(' ')
-    .filter(Boolean)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(' ');
+  if (!email) return 'User';
+  return email.split('@')[0].trim();
+}
+
+export function getUserDisplayName(profile?: Profile | null, email?: string): string {
+  const userEmail = email || profile?.email || '';
+  const emailUsername = userEmail.includes('@') ? userEmail.split('@')[0].trim() : userEmail.trim();
+
+  if (!profile) {
+    return emailUsername || 'User';
+  }
+
+  if (profile.full_name && profile.full_name.trim()) {
+    const fn = profile.full_name.trim();
+    if (fn === 'Campus Member' || fn === 'User' || fn.toLowerCase() === 'nnmis') {
+      return emailUsername || fn;
+    }
+    if (fn.includes('@')) {
+      return fn.split('@')[0].trim();
+    }
+    return fn;
+  }
+
+  if (profile.name && profile.name.trim()) {
+    const n = profile.name.trim();
+    if (n === 'Campus Member' || n === 'User' || n.toLowerCase() === 'nnmis') {
+      return emailUsername || n;
+    }
+    if (n.includes('@')) {
+      return n.split('@')[0].trim();
+    }
+    return n;
+  }
+
+  return emailUsername || 'User';
 }
 
 class DatabaseService {
@@ -57,6 +84,11 @@ class DatabaseService {
         if (parsed && parsed.email) {
           const matched = this.profiles.find(p => p.email.toLowerCase() === parsed.email.toLowerCase());
           this.currentUser = matched || parsed;
+          if (this.currentUser && (this.currentUser.full_name === 'nnmis' || this.currentUser.full_name === 'Campus Member')) {
+            const u = this.currentUser.email.split('@')[0].trim();
+            this.currentUser.full_name = u;
+            this.currentUser.name = u;
+          }
         }
       }
     } catch {
@@ -265,7 +297,8 @@ class DatabaseService {
     let user = this.profiles.find(p => p.email.toLowerCase() === lower);
 
     if (!user) {
-      const derivedName = formatNameFromEmail(trimmedEmail);
+      const emailUsername = trimmedEmail.split('@')[0].trim();
+      const derivedName = emailUsername;
       const instId = isNitte ? '22222222-2222-2222-2222-222222222222' : '11111111-1111-1111-1111-111111111111';
       const generatedId = crypto.randomUUID ? crypto.randomUUID() : `user-${Date.now()}`;
 
@@ -280,6 +313,12 @@ class DatabaseService {
         phone: '+91 8258 281263',
       };
       this.profiles.push(user);
+    } else {
+      const emailUsername = trimmedEmail.split('@')[0].trim();
+      if (user.full_name === 'nnmis' || user.full_name === 'Campus Member' || !user.full_name) {
+        user.full_name = emailUsername;
+        user.name = emailUsername;
+      }
 
       // Save user to backend Supabase profiles table
       const supabase = getSupabase();

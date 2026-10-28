@@ -262,6 +262,7 @@ const rawBookings: Booking[] = [
 // Enrich each booking with camelCase compatibility aliases
 export const INITIAL_BOOKINGS: Booking[] = rawBookings.map(b => ({
   ...b,
+  status: 'Confirmed',
   venueId: b.venue_id,
   institutionId: b.institution_id,
   userId: b.organizer_id,

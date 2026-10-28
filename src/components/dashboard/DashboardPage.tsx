@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
   MapPin, 
@@ -13,7 +13,7 @@ import {
   BookmarkCheck
 } from 'lucide-react';
 import { Profile, Venue, Booking } from '../../types';
-import { db } from '../../services/db';
+import { db, getUserDisplayName } from '../../services/db';
 
 interface DashboardPageProps {
   currentProfile?: Profile;
@@ -52,7 +52,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     .filter(b => (b.event_date || b.date || '') >= '2026-10-27' && (b.status === 'Confirmed' || b.status === 'Approved'))
     .slice(0, 4);
 
-  const userDisplayName = currentProfile?.full_name || currentProfile?.name || 'Campus Member';
+  const userDisplayName = getUserDisplayName(currentProfile);
 
   return (
     <div className="space-y-8 w-full max-w-full overflow-hidden">

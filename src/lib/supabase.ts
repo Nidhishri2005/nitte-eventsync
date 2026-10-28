@@ -1,11 +1,21 @@
 import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
 
 export function getSupabaseCredentials() {
-  const envUrl = (import.meta as any).env?.VITE_SUPABASE_URL || '';
-  const envKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = 
+    (import.meta as any).env?.VITE_SUPABASE_URL || 
+    (import.meta as any).env?.SUPABASE_URL || 
+    (typeof window !== 'undefined' ? (window as any).__SUPABASE_URL__ || localStorage.getItem('VITE_SUPABASE_URL') : '') || '';
 
-  const url = envUrl.trim();
-  const key = envKey.trim();
+  const envKey = 
+    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || 
+    (import.meta as any).env?.VITE_SUPABASE_KEY || 
+    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    (import.meta as any).env?.SUPABASE_ANON_KEY || 
+    (typeof window !== 'undefined' ? (window as any).__SUPABASE_ANON_KEY__ || localStorage.getItem('VITE_SUPABASE_ANON_KEY') : '') || '';
+
+  // Clean leading/trailing quotes and whitespace
+  const url = String(envUrl).trim().replace(/^['"]|['"]$/g, '');
+  const key = String(envKey).trim().replace(/^['"]|['"]$/g, '');
 
   const isConfigured = Boolean(
     url && 
@@ -18,6 +28,18 @@ export function getSupabaseCredentials() {
 }
 
 let clientInstance: SupabaseClient | null = null;
+
+export function setRuntimeSupabaseCredentials(url: string, key: string) {
+  if (typeof window !== 'undefined') {
+    if (url) localStorage.setItem('VITE_SUPABASE_URL', url.trim().replace(/^['"]|['"]$/g, ''));
+    else localStorage.removeItem('VITE_SUPABASE_URL');
+    
+    if (key) localStorage.setItem('VITE_SUPABASE_ANON_KEY', key.trim().replace(/^['"]|['"]$/g, ''));
+    else localStorage.removeItem('VITE_SUPABASE_ANON_KEY');
+    
+    clientInstance = null; // Invalidate cached instance
+  }
+}
 
 export function getSupabase(): SupabaseClient | null {
   const { url, key, isConfigured } = getSupabaseCredentials();
@@ -49,13 +71,15 @@ export async function testConnection(): Promise<{
   configured: boolean;
   venuesCount?: number;
   bookingsCount?: number;
+  schemaApplied?: boolean;
 }> {
   const { isConfigured, url } = getSupabaseCredentials();
   if (!isConfigured) {
     return { 
       success: false, 
       configured: false,
-      message: 'Supabase credentials not configured in .env. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.' 
+      schemaApplied: false,
+      message: 'Supabase credentials not configured in .env. Please save VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in c:\\c programming\\nitte-eventsync\\.env' 
     };
   }
 
@@ -64,6 +88,7 @@ export async function testConnection(): Promise<{
     return {
       success: false,
       configured: false,
+      schemaApplied: false,
       message: 'Unable to initialize Supabase client with current credentials.',
     };
   }
@@ -71,16 +96,18 @@ export async function testConnection(): Promise<{
   try {
     const { data: venues, error: venueError } = await client.from('venues').select('*');
     if (venueError) {
-      if (venueError.code === '42P01') {
+      if (venueError.code === '42P01' || venueError.message?.includes('relation "public.venues" does not exist')) {
         return {
           success: true,
           configured: true,
-          message: `Connected to Supabase (${url})! Tables need initialization: run supabase/schema.sql in the Supabase SQL Editor.`,
+          schemaApplied: false,
+          message: `Connected to Supabase (${url})! Tables need initialization: please run supabase/schema.sql in the Supabase SQL Editor.`,
         };
       }
       return { 
         success: false, 
         configured: true, 
+        schemaApplied: false,
         message: `Connected to Supabase, but query failed: ${venueError.message}` 
       };
     }
@@ -90,7 +117,8 @@ export async function testConnection(): Promise<{
     return {
       success: true,
       configured: true,
-      message: `Successfully connected to Supabase PostgreSQL (${url})! Verified ${venues?.length ?? 0} venues and ${bookings?.length ?? 0} bookings.`,
+      schemaApplied: true,
+      message: `Successfully connected to hosted Supabase PostgreSQL (${url})! Verified ${venues?.length ?? 0} venues and ${bookings?.length ?? 0} bookings.`,
       venuesCount: venues?.length ?? 0,
       bookingsCount: bookings?.length ?? 0,
     };
@@ -98,6 +126,7 @@ export async function testConnection(): Promise<{
     return { 
       success: false, 
       configured: true, 
+      schemaApplied: false,
       message: err.message || 'Network connection failed while reaching Supabase.' 
     };
   }

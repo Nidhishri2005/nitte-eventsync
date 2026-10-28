@@ -7,6 +7,17 @@ const CACHE_KEY_VENUES = 'nitte_eventsync_db_venues_v4';
 const CACHE_KEY_PROFILES = 'nitte_eventsync_db_profiles_v4';
 const CACHE_KEY_SESSION_USER = 'nitte_eventsync_session_user';
 
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export function formatNameFromEmail(email: string): string {
   if (!email) return 'User';
   return email.split('@')[0].trim();
@@ -370,7 +381,7 @@ class DatabaseService {
       const emailUsername = trimmedEmail.split('@')[0].trim();
       const derivedName = emailUsername;
       const instId = '22222222-2222-2222-2222-222222222222';
-      const generatedId = crypto.randomUUID ? crypto.randomUUID() : `user-${Date.now()}`;
+      const generatedId = generateUUID();
 
       user = {
         id: generatedId,
@@ -392,45 +403,45 @@ class DatabaseService {
       user.institution_id = '22222222-2222-2222-2222-222222222222';
       user.institutionId = '22222222-2222-2222-2222-222222222222';
       user.department = 'Nitte University';
+    }
 
-      // Save user to backend Supabase profiles table
-      const supabase = getSupabase();
-      if (supabase) {
-        try {
-          const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    // Authenticate and save user to backend Supabase Auth & profiles table
+    const supabase = getSupabase();
+    if (supabase) {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password: password,
+        });
+
+        if (authError && (authError.message.includes('Invalid login credentials') || authError.message.includes('not found') || authError.status === 400)) {
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
             email: trimmedEmail,
             password: password,
-          });
-
-          if (authError && (authError.message.includes('Invalid login credentials') || authError.message.includes('not found') || authError.status === 400)) {
-            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-              email: trimmedEmail,
-              password: password,
-              options: {
-                data: {
-                  full_name: user.full_name,
-                  department: user.department,
-                }
+            options: {
+              data: {
+                full_name: user.full_name,
+                department: user.department,
               }
-            });
-            if (!signUpError && signUpData.user) {
-              user.id = signUpData.user.id;
             }
-          } else if (!authError && authData.user) {
-            user.id = authData.user.id;
+          });
+          if (!signUpError && signUpData.user) {
+            user.id = signUpData.user.id;
           }
-
-          await supabase.from('profiles').upsert({
-            id: user.id,
-            full_name: user.full_name,
-            email: user.email,
-            institution_id: user.institution_id,
-            department: user.department,
-            phone: user.phone,
-          }, { onConflict: 'email' });
-        } catch (err) {
-          console.warn('Supabase profile insertion warning:', err);
+        } else if (!authError && authData.user) {
+          user.id = authData.user.id;
         }
+
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          full_name: user.full_name,
+          email: user.email,
+          institution_id: user.institution_id,
+          department: user.department,
+          phone: user.phone,
+        }, { onConflict: 'email' });
+      } catch (err) {
+        console.warn('Supabase Auth error:', err);
       }
     }
 
@@ -521,7 +532,7 @@ class DatabaseService {
       };
     }
 
-    const newId = crypto.randomUUID ? crypto.randomUUID() : 'b-' + Date.now();
+    const newId = generateUUID();
     const v = this.venues.find(ven => ven.id === data.venue_id);
     const userId = data.organizer_id || data.userId || this.currentUser?.id || '33333333-3333-3333-3333-333333333335';
     const nowIso = new Date().toISOString();
@@ -571,6 +582,21 @@ class DatabaseService {
     const supabase = getSupabase();
     if (supabase) {
       try {
+        // Ensure user profile exists in Supabase so foreign key reference succeeds
+        if (this.currentUser) {
+          try {
+            await supabase.from('profiles').upsert({
+              id: this.currentUser.id,
+              full_name: this.currentUser.full_name || this.currentUser.name || 'Organizer',
+              email: this.currentUser.email,
+              institution_id: '22222222-2222-2222-2222-222222222222',
+              department: this.currentUser.department || 'Nitte University',
+            }, { onConflict: 'email' });
+          } catch (pe) {
+            console.warn('Profile upsert warning:', pe);
+          }
+        }
+
         const { error } = await supabase.from('bookings').insert({
           id: newBooking.id,
           organizer_id: newBooking.organizer_id,
@@ -589,15 +615,23 @@ class DatabaseService {
 
         if (error) {
           console.error('Supabase booking insert error:', error);
-          if (error.message?.includes('Double-booking') || error.message?.includes('already booked')) {
+          if (error.message?.includes('Double-booking') || error.message?.includes('already booked') || error.message?.includes('overlap')) {
             return {
               success: false,
               error: 'This venue is already booked for the selected time. Please choose another time or venue.',
             };
           }
+          return {
+            success: false,
+            error: error.message || 'Failed to save booking to Supabase.',
+          };
         }
-      } catch (err) {
+      } catch (err: any) {
         console.warn('Network error during Supabase insert:', err);
+        return {
+          success: false,
+          error: err.message || 'Database error occurred.',
+        };
       }
     }
 
@@ -660,7 +694,7 @@ class DatabaseService {
 
   // --- Venue Management ---
   public async addVenue(venue: Partial<Venue>): Promise<{ success: boolean; venue?: Venue; error?: string }> {
-    const newId = crypto.randomUUID ? crypto.randomUUID() : `ven-${Date.now()}`;
+    const newId = generateUUID();
     const newVenue: Venue = {
       id: newId,
       name: venue.name || 'New Venue',
